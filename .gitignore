@@ -1,3 +1,17 @@
 .superpowers/
 
 .worktrees/
+
+bin/
+obj/
+.vs/
+.vscode/
+.idea/
+TestResults/
+coverage/
+*.user
+*.suo
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+.DS_Store

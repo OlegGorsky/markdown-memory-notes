@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Markdig" Version="0.40.0" />
+  </ItemGroup>
+</Project>
