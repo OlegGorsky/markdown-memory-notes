@@ -3,10 +3,6 @@ using Notes.Core.Files;
 
 namespace MemoryNotes.Web.Services;
 
-/// <summary>
-/// IFileSystem implementation using the browser File System Access API.
-/// All paths are relative to the vault root directory selected by the user.
-/// </summary>
 public sealed class BrowserFileSystem : IFileSystem, IAsyncDisposable
 {
     private readonly IJSRuntime js;
@@ -34,35 +30,41 @@ public sealed class BrowserFileSystem : IFileSystem, IAsyncDisposable
         return name;
     }
 
-    public bool DirectoryExists(string path)
+    public async Task<bool> DirectoryExistsAsync(string path)
     {
-        return InvokeSync("directoryExists", path);
+        var mod = await module.Value;
+        return await mod.InvokeAsync<bool>("directoryExists", path);
     }
 
-    public bool FileExists(string path)
+    public async Task<bool> FileExistsAsync(string path)
     {
-        return InvokeSync("fileExists", path);
+        var mod = await module.Value;
+        return await mod.InvokeAsync<bool>("fileExists", path);
     }
 
-    public void CreateDirectory(string path)
+    public async Task CreateDirectoryAsync(string path)
     {
-        Invoke("createDirectory", path);
+        var mod = await module.Value;
+        await mod.InvokeVoidAsync("createDirectory", path);
     }
 
-    public string ReadAllText(string path)
+    public async Task<string> ReadAllTextAsync(string path)
     {
-        return Invoke<string>("readAllText", path);
+        var mod = await module.Value;
+        return await mod.InvokeAsync<string>("readAllText", path);
     }
 
-    public void WriteAllText(string path, string contents)
+    public async Task WriteAllTextAsync(string path, string contents)
     {
-        Invoke("writeAllText", path, contents);
+        var mod = await module.Value;
+        await mod.InvokeVoidAsync("writeAllText", path, contents);
     }
 
-    public IEnumerable<string> EnumerateFiles(string path, string searchPattern, SearchOption searchOption)
+    public async Task<IEnumerable<string>> EnumerateFilesAsync(string path, string searchPattern, SearchOption searchOption)
     {
+        var mod = await module.Value;
         var recurse = searchOption == SearchOption.AllDirectories;
-        var results = Invoke<string[]>("enumerateFiles", path, searchPattern, recurse);
+        var results = await mod.InvokeAsync<string[]>("enumerateFiles", path, searchPattern, recurse);
         return results;
     }
 
@@ -73,27 +75,5 @@ public sealed class BrowserFileSystem : IFileSystem, IAsyncDisposable
             var mod = await module.Value;
             await mod.DisposeAsync();
         }
-    }
-
-    // Sync-over-async helpers — Blazor WASM is single-threaded, so this is safe
-    private T Invoke<T>(string method, params object?[] args)
-    {
-        return InvokeAsync<T>(method, args).GetAwaiter().GetResult();
-    }
-
-    private void Invoke(string method, params object?[] args)
-    {
-        InvokeAsync<object>(method, args).GetAwaiter().GetResult();
-    }
-
-    private bool InvokeSync(string method, params object?[] args)
-    {
-        return InvokeAsync<bool>(method, args).GetAwaiter().GetResult();
-    }
-
-    private async Task<T> InvokeAsync<T>(string method, params object?[] args)
-    {
-        var mod = await module.Value;
-        return await mod.InvokeAsync<T>(method, args);
     }
 }

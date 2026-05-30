@@ -14,7 +14,7 @@ else
 
     <div class="input-group mb-3">
         <input @bind="_newTrailTitle" class="form-control" placeholder="Название цепочки..." />
-        <button class="btn btn-primary" @onclick="CreateTrail"
+        <button class="btn btn-primary" @onclick="CreateTrailAsync"
                 disabled="@(string.IsNullOrWhiteSpace(_newTrailTitle))">
             Создать цепочку
         </button>
@@ -50,21 +50,21 @@ else
     private string _newTrailTitle = "";
     private List<Trail> _trails = new();
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
-        if (Session.IsOpen) LoadTrails();
+        if (Session.IsOpen) await LoadTrailsAsync();
     }
 
-    private void LoadTrails()
+    private async Task LoadTrailsAsync()
     {
-        _trails = Session.Trails.List(Session.CurrentVault!).ToList();
+        _trails = (await Session.Trails.ListAsync(Session.CurrentVault!)).ToList();
     }
 
-    private void CreateTrail()
+    private async Task CreateTrailAsync()
     {
         if (string.IsNullOrWhiteSpace(_newTrailTitle)) return;
-        Session.Trails.Create(Session.CurrentVault!, _newTrailTitle);
+        await Session.Trails.CreateAsync(Session.CurrentVault!, _newTrailTitle);
         _newTrailTitle = "";
-        LoadTrails();
+        await LoadTrailsAsync();
     }
 }

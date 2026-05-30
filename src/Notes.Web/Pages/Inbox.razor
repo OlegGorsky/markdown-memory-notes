@@ -15,7 +15,7 @@ else
     <div class="input-group mb-3">
         <input @bind="_text" class="form-control" placeholder="Запишите мысль..."
                @onkeydown="HandleKeyDown" />
-        <button class="btn btn-primary" @onclick="Capture" disabled="@(string.IsNullOrWhiteSpace(_text))">
+        <button class="btn btn-primary" @onclick="CaptureAsync" disabled="@(string.IsNullOrWhiteSpace(_text))">
             Записать
         </button>
     </div>
@@ -49,30 +49,30 @@ else
     private string? _status;
     private List<Note> _recentNotes = new();
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
-        if (Session.IsOpen) LoadRecent();
+        if (Session.IsOpen) await LoadRecentAsync();
     }
 
-    private void LoadRecent()
+    private async Task LoadRecentAsync()
     {
-        _recentNotes = Session.RebuildIndex().Take(20).ToList();
+        _recentNotes = (await Session.RebuildIndexAsync()).Take(20).ToList();
     }
 
-    private void Capture()
+    private async Task CaptureAsync()
     {
         if (string.IsNullOrWhiteSpace(_text)) return;
-        Session.Inbox.Capture(Session.CurrentVault!, _text);
+        await Session.Inbox.CaptureAsync(Session.CurrentVault!, _text);
         _status = $"Записано: {_text[..Math.Min(_text.Length, 50)]}";
         _text = "";
-        LoadRecent();
+        await LoadRecentAsync();
     }
 
     private async Task HandleKeyDown(KeyboardEventArgs e)
     {
         if (e.Key == "Enter" && !e.CtrlKey && !e.ShiftKey)
         {
-            Capture();
+            await CaptureAsync();
         }
     }
 }

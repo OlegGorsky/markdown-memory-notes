@@ -16,7 +16,7 @@ public sealed class DesktopVaultSession
 
     public DesktopVaultSession(string rootPath)
     {
-        Vault = new VaultService(fileSystem).Create(rootPath);
+        Vault = new VaultService(fileSystem).CreateAsync(rootPath).GetAwaiter().GetResult();
         Notes = new NoteRepository(fileSystem);
         Inbox = new InboxService(fileSystem);
         Trails = new TrailRepository(fileSystem);
@@ -34,7 +34,7 @@ public sealed class DesktopVaultSession
 
     public IReadOnlyList<Note> RebuildIndex()
     {
-        var notes = Notes.List(Vault);
+        var notes = Notes.ListAsync(Vault).GetAwaiter().GetResult();
         searchIndex.Rebuild(notes);
         return notes;
     }

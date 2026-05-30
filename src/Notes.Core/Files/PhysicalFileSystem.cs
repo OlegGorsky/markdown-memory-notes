@@ -2,15 +2,22 @@ namespace Notes.Core.Files;
 
 public sealed class PhysicalFileSystem : IFileSystem
 {
-    public bool DirectoryExists(string path) => Directory.Exists(path);
+    public Task<bool> DirectoryExistsAsync(string path)
+        => Task.FromResult(Directory.Exists(path));
 
-    public bool FileExists(string path) => File.Exists(path);
+    public Task<bool> FileExistsAsync(string path)
+        => Task.FromResult(File.Exists(path));
 
-    public void CreateDirectory(string path) => Directory.CreateDirectory(path);
+    public Task CreateDirectoryAsync(string path)
+    {
+        Directory.CreateDirectory(path);
+        return Task.CompletedTask;
+    }
 
-    public string ReadAllText(string path) => File.ReadAllText(path);
+    public Task<string> ReadAllTextAsync(string path)
+        => Task.FromResult(File.ReadAllText(path));
 
-    public void WriteAllText(string path, string contents)
+    public Task WriteAllTextAsync(string path, string contents)
     {
         var directory = Path.GetDirectoryName(path);
         if (!string.IsNullOrWhiteSpace(directory))
@@ -19,10 +26,9 @@ public sealed class PhysicalFileSystem : IFileSystem
         }
 
         File.WriteAllText(path, contents);
+        return Task.CompletedTask;
     }
 
-    public IEnumerable<string> EnumerateFiles(string path, string searchPattern, SearchOption searchOption)
-    {
-        return Directory.EnumerateFiles(path, searchPattern, searchOption);
-    }
+    public Task<IEnumerable<string>> EnumerateFilesAsync(string path, string searchPattern, SearchOption searchOption)
+        => Task.FromResult(Directory.EnumerateFiles(path, searchPattern, searchOption));
 }

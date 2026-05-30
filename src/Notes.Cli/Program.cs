@@ -7,11 +7,11 @@ using Notes.Core.Trails;
 using Notes.Core.Vault;
 using CoreVault = Notes.Core.Vault.Vault;
 
-return new CliProgram().Run(args);
+return await new CliProgram().RunAsync(args);
 
 internal sealed class CliProgram
 {
-    public int Run(string[] args)
+    public async Task<int> RunAsync(string[] args)
     {
         if (args.Length == 0 || args[0] is "help" or "--help" or "-h")
         {
@@ -21,7 +21,7 @@ internal sealed class CliProgram
 
         var vaultPath = Environment.GetEnvironmentVariable("MMN_VAULT") ?? Directory.GetCurrentDirectory();
         var fileSystem = new PhysicalFileSystem();
-        var vault = new VaultService(fileSystem).Open(vaultPath);
+        var vault = await new VaultService(fileSystem).OpenAsync(vaultPath);
         var notes = new NoteRepository(fileSystem);
 
         try
@@ -29,13 +29,13 @@ internal sealed class CliProgram
             switch (args[0])
             {
                 case "add":
-                    return Add(vault, fileSystem, args);
+                    return await AddAsync(vault, fileSystem, args);
                 case "find":
-                    return Find(vault, notes, args);
+                    return await FindAsync(vault, notes, args);
                 case "trail":
-                    return Trail(vault, fileSystem, args);
+                    return await TrailAsync(vault, fileSystem, args);
                 case "index":
-                    return Index(vault, notes, args);
+                    return await IndexAsync(vault, notes, args);
                 default:
                     Console.Error.WriteLine($"Unknown command: {args[0]}");
                     PrintHelp();
@@ -49,7 +49,7 @@ internal sealed class CliProgram
         }
     }
 
-    private static int Add(CoreVault vault, PhysicalFileSystem fileSystem, string[] args)
+    private static async Task<int> AddAsync(CoreVault vault, PhysicalFileSystem fileSystem, string[] args)
     {
         if (args.Length < 2)
         {
@@ -58,12 +58,12 @@ internal sealed class CliProgram
         }
 
         var text = string.Join(' ', args.Skip(1));
-        var path = new InboxService(fileSystem).Capture(vault, text);
+        var path = await new InboxService(fileSystem).CaptureAsync(vault, text);
         Console.WriteLine($"Captured: {path}");
         return 0;
     }
 
-    private static int Find(CoreVault vault, NoteRepository notes, string[] args)
+    private static async Task<int> FindAsync(CoreVault vault, NoteRepository notes, string[] args)
     {
         if (args.Length < 2)
         {
@@ -73,7 +73,7 @@ internal sealed class CliProgram
 
         var query = string.Join(' ', args.Skip(1));
         var index = new InMemorySearchIndex();
-        index.Rebuild(notes.List(vault));
+        index.Rebuild(await notes.ListAsync(vault));
         foreach (var result in index.Search(query, 10))
         {
             Console.WriteLine($"{result.Score}\t{result.Note.Title}\t{result.Note.Path}");
@@ -82,12 +82,12 @@ internal sealed class CliProgram
         return 0;
     }
 
-    private static int Trail(CoreVault vault, PhysicalFileSystem fileSystem, string[] args)
+    private static async Task<int> TrailAsync(CoreVault vault, PhysicalFileSystem fileSystem, string[] args)
     {
         var trails = new TrailRepository(fileSystem);
         if (args.Length == 2 && args[1] == "list")
         {
-            foreach (var trail in trails.List(vault))
+            foreach (var trail in await trails.ListAsync(vault))
             {
                 Console.WriteLine($"{trail.Id}\t{trail.Title}\t{trail.Items.Count} items");
             }
@@ -97,7 +97,8 @@ internal sealed class CliProgram
 
         if (args.Length == 3 && args[1] == "show")
         {
-            var trail = trails.List(vault).SingleOrDefault(value => value.Id == args[2] || value.Title.Equals(args[2], StringComparison.OrdinalIgnoreCase));
+            var allTrails = await trails.ListAsync(vault);
+            var trail = allTrails.SingleOrDefault(value => value.Id == args[2] || value.Title.Equals(args[2], StringComparison.OrdinalIgnoreCase));
             if (trail is null)
             {
                 Console.Error.WriteLine($"Trail not found: {args[2]}");
@@ -117,11 +118,11 @@ internal sealed class CliProgram
         return 2;
     }
 
-    private static int Index(CoreVault vault, NoteRepository notes, string[] args)
+    private static async Task<int> IndexAsync(CoreVault vault, NoteRepository notes, string[] args)
     {
         if (args.Length == 2 && args[1] == "rebuild")
         {
-            var allNotes = notes.List(vault);
+            var allNotes = await notes.ListAsync(vault);
             var index = new InMemorySearchIndex();
             index.Rebuild(allNotes);
             var memory = new QuietMemoryService(index);

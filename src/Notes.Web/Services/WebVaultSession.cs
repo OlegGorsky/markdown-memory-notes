@@ -8,9 +8,6 @@ using Notes.Core.Vault;
 
 namespace MemoryNotes.Web.Services;
 
-/// <summary>
-/// Browser-side vault session holding core services wired to BrowserFileSystem.
-/// </summary>
 public sealed class WebVaultSession
 {
     private readonly BrowserFileSystem fileSystem;
@@ -37,19 +34,19 @@ public sealed class WebVaultSession
     public Vault? CurrentVault { get; private set; }
     public bool IsOpen => CurrentVault is not null;
 
-    public Vault OpenOrCreate(string path)
+    public async Task<Vault> OpenOrCreateAsync(string path)
     {
-        CurrentVault = fileSystem.DirectoryExists(path)
-            ? VaultService.Open(path)
-            : VaultService.Create(path);
-        RebuildIndex();
+        CurrentVault = await fileSystem.DirectoryExistsAsync(path)
+            ? await VaultService.OpenAsync(path)
+            : await VaultService.CreateAsync(path);
+        await RebuildIndexAsync();
         return CurrentVault;
     }
 
-    public IReadOnlyList<Note> RebuildIndex()
+    public async Task<IReadOnlyList<Note>> RebuildIndexAsync()
     {
         if (CurrentVault is null) return Array.Empty<Note>();
-        var notes = Notes.List(CurrentVault);
+        var notes = await Notes.ListAsync(CurrentVault);
         searchIndex.Rebuild(notes);
         return notes;
     }

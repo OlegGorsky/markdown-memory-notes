@@ -13,7 +13,7 @@ public sealed class InboxService
         this.now = now ?? (() => DateTimeOffset.Now);
     }
 
-    public string Capture(Vault.Vault vault, string text)
+    public async Task<string> CaptureAsync(Vault.Vault vault, string text)
     {
         if (string.IsNullOrWhiteSpace(text))
         {
@@ -23,10 +23,11 @@ public sealed class InboxService
         var timestamp = now();
         var date = timestamp.ToString("yyyy-MM-dd");
         var path = Path.Combine(vault.InboxPath, date + ".md");
-        var prefix = fileSystem.FileExists(path) ? fileSystem.ReadAllText(path).TrimEnd() : $"# Inbox {date}";
+        var exists = await fileSystem.FileExistsAsync(path);
+        var prefix = exists ? (await fileSystem.ReadAllTextAsync(path)).TrimEnd() : $"# Inbox {date}";
         var line = $"- {timestamp:HH:mm} {text.Trim()}";
         var next = prefix + Environment.NewLine + line + Environment.NewLine;
-        fileSystem.WriteAllText(path, next);
+        await fileSystem.WriteAllTextAsync(path, next);
         return path;
     }
 }

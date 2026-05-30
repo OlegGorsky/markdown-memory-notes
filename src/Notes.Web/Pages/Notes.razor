@@ -13,7 +13,7 @@ else
     <div class="app-shell">
         <div class="toolbar">
             <span class="vault-name">@Session.CurrentVault!.RootPath</span>
-            <button class="btn btn-primary btn-sm" @onclick="NewNote">+ Новая</button>
+            <button class="btn btn-primary btn-sm" @onclick="NewNoteAsync">+ Новая</button>
         </div>
 
         <div class="main-grid">
@@ -22,7 +22,7 @@ else
                 @foreach (var note in _notes)
                 {
                     <div class="note-card @(note == _selectedNote ? "selected" : "")"
-                         @onclick="() => SelectNote(note)">
+                         @onclick="() => SelectNoteAsync(note)">
                         <div class="note-title">@note.Title</div>
                         <div class="note-excerpt">@note.Excerpt</div>
                     </div>
@@ -37,7 +37,7 @@ else
                         <span class="save-state @(_dirty ? "unsaved" : "saved")">
                             @(_dirty ? "Не сохранено" : "Сохранено")
                         </span>
-                        <button class="btn btn-sm btn-success" @onclick="SaveNote" disabled="@(!_dirty)">Сохранить</button>
+                        <button class="btn btn-sm btn-success" @onclick="SaveNoteAsync" disabled="@(!_dirty)">Сохранить</button>
                     </div>
                     <textarea @bind="_editBody" class="editor-textarea" rows="20"></textarea>
                 }
@@ -66,22 +66,22 @@ else
     private bool _dirty;
     private List<string> _quietMemory = new();
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
-        if (Session.IsOpen) ReloadNotes();
+        if (Session.IsOpen) await ReloadNotesAsync();
     }
 
-    private void ReloadNotes()
+    private async Task ReloadNotesAsync()
     {
-        _notes = Session.RebuildIndex().ToList();
+        _notes = (await Session.RebuildIndexAsync()).ToList();
         StateHasChanged();
     }
 
-    private void SelectNote(Note note)
+    private async Task SelectNoteAsync(Note note)
     {
         if (_dirty && _selectedNote is not null)
         {
-            SaveNote();
+            await SaveNoteAsync();
         }
         _selectedNote = note;
         _editTitle = note.Title;
@@ -91,21 +91,21 @@ else
         StateHasChanged();
     }
 
-    private void NewNote()
+    private async Task NewNoteAsync()
     {
-        if (_dirty && _selectedNote is not null) SaveNote();
-        var note = Session.Notes.Create(Session.CurrentVault!, "Без названия", "Начните писать...");
-        ReloadNotes();
-        SelectNote(note);
+        if (_dirty && _selectedNote is not null) await SaveNoteAsync();
+        var note = await Session.Notes.CreateAsync(Session.CurrentVault!, "Без названия", "Начните писать...");
+        await ReloadNotesAsync();
+        await SelectNoteAsync(note);
     }
 
-    private void SaveNote()
+    private async Task SaveNoteAsync()
     {
         if (_selectedNote is null) return;
         var updated = _selectedNote with { Title = _editTitle, Body = _editBody };
-        _selectedNote = Session.Notes.Save(updated);
+        _selectedNote = await Session.Notes.SaveAsync(updated);
         _dirty = false;
-        ReloadNotes();
+        await ReloadNotesAsync();
         StateHasChanged();
     }
 

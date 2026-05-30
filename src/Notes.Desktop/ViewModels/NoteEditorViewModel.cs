@@ -46,7 +46,7 @@ public sealed partial class NoteEditorViewModel : ObservableObject
             return null;
         }
 
-        var saved = session.Notes.Save(Note with { Body = Markdown });
+        var saved = session.Notes.SaveAsync(Note with { Body = Markdown }).GetAwaiter().GetResult();
         Note = saved;
         SaveState = "Saved";
         session.RebuildIndex();

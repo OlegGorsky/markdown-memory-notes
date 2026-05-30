@@ -15,29 +15,30 @@ public sealed class TrailRepository
         this.now = now ?? (() => DateTimeOffset.Now);
     }
 
-    public IReadOnlyList<Trail> List(Vault.Vault vault)
+    public async Task<IReadOnlyList<Trail>> ListAsync(Vault.Vault vault)
     {
-        return ReadStore(vault).Trails;
+        var store = await ReadStoreAsync(vault);
+        return store.Trails;
     }
 
-    public Trail Create(Vault.Vault vault, string title)
+    public async Task<Trail> CreateAsync(Vault.Vault vault, string title)
     {
         if (string.IsNullOrWhiteSpace(title))
         {
             throw new ArgumentException("Trail title cannot be empty.", nameof(title));
         }
 
-        var store = ReadStore(vault);
+        var store = await ReadStoreAsync(vault);
         var timestamp = now();
         var trail = new Trail("trail_" + Guid.NewGuid().ToString("N"), title.Trim(), timestamp, timestamp, Array.Empty<TrailItem>());
         store.Trails.Add(trail);
-        WriteStore(vault, store);
+        await WriteStoreAsync(vault, store);
         return trail;
     }
 
-    public Trail AddItem(Vault.Vault vault, string trailId, TrailItem item)
+    public async Task<Trail> AddItemAsync(Vault.Vault vault, string trailId, TrailItem item)
     {
-        var store = ReadStore(vault);
+        var store = await ReadStoreAsync(vault);
         var index = store.Trails.FindIndex(trail => trail.Id == trailId);
         if (index < 0)
         {
@@ -48,25 +49,25 @@ public sealed class TrailRepository
         var items = existing.Items.Concat(new[] { item }).ToArray();
         var updated = existing with { Items = items, Updated = now() };
         store.Trails[index] = updated;
-        WriteStore(vault, store);
+        await WriteStoreAsync(vault, store);
         return updated;
     }
 
-    private TrailStore ReadStore(Vault.Vault vault)
+    private async Task<TrailStore> ReadStoreAsync(Vault.Vault vault)
     {
-        if (!fileSystem.FileExists(vault.TrailsPath))
+        if (!await fileSystem.FileExistsAsync(vault.TrailsPath))
         {
             return new TrailStore();
         }
 
-        var text = fileSystem.ReadAllText(vault.TrailsPath);
+        var text = await fileSystem.ReadAllTextAsync(vault.TrailsPath);
         return JsonSerializer.Deserialize<TrailStore>(text, JsonOptions) ?? new TrailStore();
     }
 
-    private void WriteStore(Vault.Vault vault, TrailStore store)
+    private async Task WriteStoreAsync(Vault.Vault vault, TrailStore store)
     {
         var json = JsonSerializer.Serialize(store, JsonOptions);
-        fileSystem.WriteAllText(vault.TrailsPath, json + Environment.NewLine);
+        await fileSystem.WriteAllTextAsync(vault.TrailsPath, json + Environment.NewLine);
     }
 
     private sealed class TrailStore

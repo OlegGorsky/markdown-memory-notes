@@ -7,13 +7,13 @@ namespace Notes.Core.Tests.Inbox;
 public sealed class InboxServiceTests
 {
     [Fact]
-    public void CaptureAppendsToTodayInboxNote()
+    public async Task CaptureAppendsToTodayInboxNote()
     {
-        var vault = CreateVault();
+        var vault = await CreateVaultAsync();
         var service = new InboxService(new PhysicalFileSystem(), () => new DateTimeOffset(2026, 5, 30, 14, 15, 0, TimeSpan.FromHours(3)));
 
-        service.Capture(vault, "Idea about quiet memory");
-        service.Capture(vault, "Second thought");
+        await service.CaptureAsync(vault, "Idea about quiet memory");
+        await service.CaptureAsync(vault, "Second thought");
 
         var path = Path.Combine(vault.InboxPath, "2026-05-30.md");
         var text = File.ReadAllText(path);
@@ -23,19 +23,19 @@ public sealed class InboxServiceTests
     }
 
     [Fact]
-    public void CaptureRejectsBlankText()
+    public async Task CaptureRejectsBlankText()
     {
-        var vault = CreateVault();
+        var vault = await CreateVaultAsync();
         var service = new InboxService(new PhysicalFileSystem(), () => DateTimeOffset.Now);
 
-        var exception = Assert.Throws<ArgumentException>(() => service.Capture(vault, "   "));
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() => service.CaptureAsync(vault, "   "));
 
         Assert.Contains("Inbox text cannot be empty", exception.Message, StringComparison.Ordinal);
     }
 
-    private static global::Notes.Core.Vault.Vault CreateVault()
+    private static Task<global::Notes.Core.Vault.Vault> CreateVaultAsync()
     {
         var root = Path.Combine(Path.GetTempPath(), "mmn-tests", Guid.NewGuid().ToString("N"));
-        return new global::Notes.Core.Vault.VaultService(new PhysicalFileSystem()).Create(root);
+        return new global::Notes.Core.Vault.VaultService(new PhysicalFileSystem()).CreateAsync(root);
     }
 }

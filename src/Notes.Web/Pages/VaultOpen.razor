@@ -31,7 +31,7 @@
         {
             var name = await FS.OpenVaultAsync();
             if (name is null) return;
-            Session.OpenOrCreate(name);
+            await Session.OpenOrCreateAsync(name);
             Nav.NavigateTo("/", forceLoad: false);
         }
         catch (Exception ex)

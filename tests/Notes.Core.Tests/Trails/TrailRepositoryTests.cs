@@ -7,16 +7,16 @@ namespace Notes.Core.Tests.Trails;
 public sealed class TrailRepositoryTests
 {
     [Fact]
-    public void CreateAndAddItemsPersistsTrailJson()
+    public async Task CreateAndAddItemsPersistsTrailJson()
     {
-        var vault = CreateVault();
+        var vault = await CreateVaultAsync();
         var repository = new TrailRepository(new PhysicalFileSystem(), () => new DateTimeOffset(2026, 5, 30, 12, 0, 0, TimeSpan.FromHours(3)));
 
-        var trail = repository.Create(vault, "Designing memory notes");
-        repository.AddItem(vault, trail.Id, TrailItem.Note("note_1"));
-        repository.AddItem(vault, trail.Id, TrailItem.Fragment("note_2", "frag_1"));
+        var trail = await repository.CreateAsync(vault, "Designing memory notes");
+        await repository.AddItemAsync(vault, trail.Id, TrailItem.Note("note_1"));
+        await repository.AddItemAsync(vault, trail.Id, TrailItem.Fragment("note_2", "frag_1"));
 
-        var loaded = repository.List(vault).Single();
+        var loaded = (await repository.ListAsync(vault)).Single();
         Assert.Equal("Designing memory notes", loaded.Title);
         Assert.Equal(2, loaded.Items.Count);
         Assert.Equal("note", loaded.Items[0].Kind);
@@ -25,20 +25,20 @@ public sealed class TrailRepositoryTests
     }
 
     [Fact]
-    public void ListReturnsEmptyWhenTrailFileIsMissing()
+    public async Task ListReturnsEmptyWhenTrailFileIsMissing()
     {
-        var vault = CreateVault();
+        var vault = await CreateVaultAsync();
         File.Delete(vault.TrailsPath);
         var repository = new TrailRepository(new PhysicalFileSystem());
 
-        var trails = repository.List(vault);
+        var trails = await repository.ListAsync(vault);
 
         Assert.Empty(trails);
     }
 
-    private static global::Notes.Core.Vault.Vault CreateVault()
+    private static Task<global::Notes.Core.Vault.Vault> CreateVaultAsync()
     {
         var root = Path.Combine(Path.GetTempPath(), "mmn-tests", Guid.NewGuid().ToString("N"));
-        return new global::Notes.Core.Vault.VaultService(new PhysicalFileSystem()).Create(root);
+        return new global::Notes.Core.Vault.VaultService(new PhysicalFileSystem()).CreateAsync(root);
     }
 }

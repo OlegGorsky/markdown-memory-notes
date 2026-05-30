@@ -8,12 +8,12 @@ namespace Notes.Core.Tests.Notes;
 public sealed class NoteRepositoryTests
 {
     [Fact]
-    public void CreateNoteWritesMarkdownWithFrontmatter()
+    public async Task CreateNoteWritesMarkdownWithFrontmatter()
     {
-        var vault = CreateVault();
+        var vault = await CreateVaultAsync();
         var repository = new NoteRepository(new PhysicalFileSystem());
 
-        var note = repository.Create(vault, "Local Markdown Notes", "First paragraph.");
+        var note = await repository.CreateAsync(vault, "Local Markdown Notes", "First paragraph.");
 
         Assert.StartsWith("note_", note.Id, StringComparison.Ordinal);
         Assert.Equal("Local Markdown Notes", note.Title);
@@ -26,14 +26,14 @@ public sealed class NoteRepositoryTests
     }
 
     [Fact]
-    public void ListReadsMarkdownNotesFromNotesAndInbox()
+    public async Task ListReadsMarkdownNotesFromNotesAndInbox()
     {
-        var vault = CreateVault();
+        var vault = await CreateVaultAsync();
         File.WriteAllText(Path.Combine(vault.NotesPath, "alpha.md"), "---\nid: note_alpha\ntitle: Alpha\ncreated: 2026-05-30T10:00:00+03:00\nupdated: 2026-05-30T10:00:00+03:00\n---\n# Alpha\nBody");
         File.WriteAllText(Path.Combine(vault.InboxPath, "2026-05-30.md"), "# Inbox\nCaptured");
         var repository = new NoteRepository(new PhysicalFileSystem());
 
-        var notes = repository.List(vault).OrderBy(note => note.Title).ToArray();
+        var notes = (await repository.ListAsync(vault)).OrderBy(note => note.Title).ToArray();
 
         Assert.Equal(2, notes.Length);
         Assert.Equal("Alpha", notes[0].Title);
@@ -41,13 +41,13 @@ public sealed class NoteRepositoryTests
     }
 
     [Fact]
-    public void SavePreservesExistingIdAndUpdatesBody()
+    public async Task SavePreservesExistingIdAndUpdatesBody()
     {
-        var vault = CreateVault();
+        var vault = await CreateVaultAsync();
         var repository = new NoteRepository(new PhysicalFileSystem());
-        var created = repository.Create(vault, "Draft", "Original");
+        var created = await repository.CreateAsync(vault, "Draft", "Original");
 
-        var saved = repository.Save(created with { Body = "Changed body" });
+        var saved = await repository.SaveAsync(created with { Body = "Changed body" });
 
         Assert.Equal(created.Id, saved.Id);
         var text = File.ReadAllText(created.Path);
@@ -55,9 +55,9 @@ public sealed class NoteRepositoryTests
         Assert.DoesNotContain("Original", text, StringComparison.Ordinal);
     }
 
-    private static CoreVault CreateVault()
+    private static Task<CoreVault> CreateVaultAsync()
     {
         var root = Path.Combine(Path.GetTempPath(), "mmn-tests", Guid.NewGuid().ToString("N"));
-        return new global::Notes.Core.Vault.VaultService(new PhysicalFileSystem()).Create(root);
+        return new global::Notes.Core.Vault.VaultService(new PhysicalFileSystem()).CreateAsync(root);
     }
 }

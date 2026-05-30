@@ -64,16 +64,16 @@ public sealed partial class MainWindowViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void NewNote()
+    private async Task NewNoteAsync()
     {
-        var note = session.Notes.Create(session.Vault, "Untitled note", "Start writing here.");
+        var note = await session.Notes.CreateAsync(session.Vault, "Untitled note", "Start writing here.");
         Reload();
         SelectedNote = Notes.FirstOrDefault(item => item.Note.Id == note.Id);
         Status = "Note created";
     }
 
     [RelayCommand]
-    private void SaveNote()
+    private async Task SaveNoteAsync()
     {
         var saved = Editor.Save();
         if (saved is not null)
@@ -82,10 +82,11 @@ public sealed partial class MainWindowViewModel : ObservableObject
             SelectedNote = Notes.FirstOrDefault(item => item.Note.Id == saved.Id);
             Status = "Saved";
         }
+        await Task.CompletedTask;
     }
 
     [RelayCommand]
-    private void Capture()
+    private async Task CaptureAsync()
     {
         if (string.IsNullOrWhiteSpace(CaptureText))
         {
@@ -93,7 +94,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
             return;
         }
 
-        session.Inbox.Capture(session.Vault, CaptureText);
+        await session.Inbox.CaptureAsync(session.Vault, CaptureText);
         CaptureText = string.Empty;
         Reload();
         Status = "Captured";
@@ -116,12 +117,12 @@ public sealed partial class MainWindowViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void CreateTrail()
+    private async Task CreateTrailAsync()
     {
-        var trail = session.Trails.Create(session.Vault, "New thought trail");
+        var trail = await session.Trails.CreateAsync(session.Vault, "New thought trail");
         if (SelectedNote is not null)
         {
-            session.Trails.AddItem(session.Vault, trail.Id, TrailItem.Note(SelectedNote.Note.Id));
+            await session.Trails.AddItemAsync(session.Vault, trail.Id, TrailItem.Note(SelectedNote.Note.Id));
         }
 
         ReloadTrails();
@@ -143,7 +144,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private void ReloadTrails()
     {
         Trails.Clear();
-        foreach (var trail in session.Trails.List(session.Vault))
+        foreach (var trail in session.Trails.ListAsync(session.Vault).GetAwaiter().GetResult())
         {
             Trails.Add(new TrailViewModel(trail));
         }

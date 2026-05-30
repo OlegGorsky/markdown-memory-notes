@@ -13,7 +13,7 @@ else
     <div class="input-group mb-3">
         <input @bind="_query" class="form-control" placeholder="Поиск по заметкам..."
                @onkeydown="HandleKeyDown" />
-        <button class="btn btn-primary" @onclick="DoSearch">Найти</button>
+        <button class="btn btn-primary" @onclick="DoSearchAsync">Найти</button>
     </div>
 
     @if (_results is not null)
@@ -36,15 +36,15 @@ else
     private string _query = "";
     private List<SearchResult>? _results;
 
-    private void DoSearch()
+    private async Task DoSearchAsync()
     {
         if (string.IsNullOrWhiteSpace(_query)) return;
-        Session.RebuildIndex();
+        await Session.RebuildIndexAsync();
         _results = Session.Search(_query).ToList();
     }
 
     private async Task HandleKeyDown(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter") DoSearch();
+        if (e.Key == "Enter") await DoSearchAsync();
     }
 }

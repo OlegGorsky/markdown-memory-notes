@@ -13,12 +13,12 @@ public sealed class NoteRepository
         this.fileSystem = fileSystem;
     }
 
-    public Note Create(Vault.Vault vault, string title, string body)
+    public async Task<Note> CreateAsync(Vault.Vault vault, string title, string body)
     {
         var now = DateTimeOffset.Now;
         var id = "note_" + Guid.NewGuid().ToString("N");
         var slug = NoteTitle.ToSlug(title);
-        var path = UniquePath(vault.NotesPath, slug);
+        var path = await UniquePathAsync(vault.NotesPath, slug);
         var noteBody = $"# {title}\n\n{body.Trim()}\n";
         var frontmatter = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -28,29 +28,35 @@ public sealed class NoteRepository
             ["updated"] = now.ToString("O")
         };
 
-        fileSystem.WriteAllText(path, MarkdownParser.Write(frontmatter, noteBody));
+        await fileSystem.WriteAllTextAsync(path, MarkdownParser.Write(frontmatter, noteBody));
         return new Note(id, title, path, noteBody, now, now);
     }
 
-    public IReadOnlyList<Note> List(Vault.Vault vault)
+    public async Task<IReadOnlyList<Note>> ListAsync(Vault.Vault vault)
     {
         var files = new List<string>();
-        if (fileSystem.DirectoryExists(vault.NotesPath))
+        if (await fileSystem.DirectoryExistsAsync(vault.NotesPath))
         {
-            files.AddRange(fileSystem.EnumerateFiles(vault.NotesPath, "*.md", SearchOption.AllDirectories));
+            files.AddRange(await fileSystem.EnumerateFilesAsync(vault.NotesPath, "*.md", SearchOption.AllDirectories));
         }
 
-        if (fileSystem.DirectoryExists(vault.InboxPath))
+        if (await fileSystem.DirectoryExistsAsync(vault.InboxPath))
         {
-            files.AddRange(fileSystem.EnumerateFiles(vault.InboxPath, "*.md", SearchOption.AllDirectories));
+            files.AddRange(await fileSystem.EnumerateFilesAsync(vault.InboxPath, "*.md", SearchOption.AllDirectories));
         }
 
-        return files.Select(Read).OrderByDescending(static note => note.Updated).ToArray();
+        var notes = new List<Note>();
+        foreach (var file in files)
+        {
+            notes.Add(await ReadAsync(file));
+        }
+
+        return notes.OrderByDescending(static note => note.Updated).ToArray();
     }
 
-    public Note Read(string path)
+    public async Task<Note> ReadAsync(string path)
     {
-        var text = fileSystem.ReadAllText(path);
+        var text = await fileSystem.ReadAllTextAsync(path);
         var document = MarkdownParser.Parse(text);
         var id = document.GetFrontmatterValue("id", "path_" + Guid.NewGuid().ToString("N"));
         var title = document.GetFrontmatterValue("title", NoteTitle.FromBodyOrFileName(document.Body, path));
@@ -59,7 +65,7 @@ public sealed class NoteRepository
         return new Note(id, title, Path.GetFullPath(path), document.Body, created, updated);
     }
 
-    public Note Save(Note note)
+    public async Task<Note> SaveAsync(Note note)
     {
         var updated = DateTimeOffset.Now;
         var frontmatter = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -69,7 +75,7 @@ public sealed class NoteRepository
             ["created"] = note.Created.ToString("O"),
             ["updated"] = updated.ToString("O")
         };
-        fileSystem.WriteAllText(note.Path, MarkdownParser.Write(frontmatter, note.Body));
+        await fileSystem.WriteAllTextAsync(note.Path, MarkdownParser.Write(frontmatter, note.Body));
         return note with { Updated = updated };
     }
 
@@ -78,11 +84,11 @@ public sealed class NoteRepository
         return DateTimeOffset.TryParse(value, out var parsed) ? parsed : DateTimeOffset.MinValue;
     }
 
-    private string UniquePath(string directory, string slug)
+    private async Task<string> UniquePathAsync(string directory, string slug)
     {
         var candidate = Path.Combine(directory, slug + ".md");
         var index = 2;
-        while (fileSystem.FileExists(candidate))
+        while (await fileSystem.FileExistsAsync(candidate))
         {
             candidate = Path.Combine(directory, $"{slug}-{index}.md");
             index++;
