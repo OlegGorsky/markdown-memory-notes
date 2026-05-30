@@ -1,17 +1,75 @@
 // File System Access API — JS interop for Notes.Core/BrowserFileSystem
 
-let rootHandle = null;
-const handles = {};
+const DB_NAME = 'mmn-vault';
+const DB_VERSION = 1;
+const STORE_NAME = 'handles';
 
-/** Open a vault directory via picker */
+let rootHandle = null;
+let vaultName = null;
+
+/** Try to restore a previously saved vault handle from IndexedDB */
+export async function tryRestoreVault() {
+    try {
+        const db = await openDB();
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.get('root');
+        const result = await new Promise((resolve, reject) => {
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+        if (result && result.handle) {
+            const permission = await result.handle.queryPermission({ mode: 'readwrite' });
+            if (permission === 'granted' || (permission === 'prompt' &&
+                (await result.handle.requestPermission({ mode: 'readwrite' })) === 'granted')) {
+                rootHandle = result.handle;
+                vaultName = result.handle.name;
+                return vaultName;
+            }
+        }
+    } catch {
+        // Cannot restore
+    }
+    return null;
+}
+
+/** Open a vault directory via picker and persist the handle */
 export async function openVault() {
     try {
         rootHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
-        return rootHandle.name;
+        vaultName = rootHandle.name;
+        await saveHandle(rootHandle);
+        return vaultName;
     } catch (err) {
         if (err.name === 'AbortError') return null;
         throw err;
     }
+}
+
+async function saveHandle(handle) {
+    try {
+        const db = await openDB();
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        store.put({ id: 'root', handle });
+        await new Promise((resolve, reject) => {
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+    } catch {
+        // IndexedDB might not be available
+    }
+}
+
+function openDB() {
+    return new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, DB_VERSION);
+        req.onupgradeneeded = () => {
+            req.result.createObjectStore(STORE_NAME, { keyPath: 'id' });
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+    });
 }
 
 /** Check if a relative path exists as directory */

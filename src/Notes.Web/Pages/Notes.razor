@@ -1,6 +1,7 @@
 @page "/"
 @inject WebVaultSession Session
 @inject BrowserFileSystem FS
+@implements IDisposable
 
 <PageTitle>Заметки с памятью</PageTitle>
 
@@ -33,13 +34,11 @@ else
                 @if (_selectedNote is not null)
                 {
                     <div class="editor-header">
-                        <input @bind="_editTitle" class="form-control" placeholder="Заголовок" />
-                        <span class="save-state @(_dirty ? "unsaved" : "saved")">
-                            @(_dirty ? "Не сохранено" : "Сохранено")
-                        </span>
-                        <button class="btn btn-sm btn-success" @onclick="SaveNoteAsync" disabled="@(!_dirty)">Сохранить</button>
+                        <input @bind="_editTitle" @bind:event="oninput" @bind:after="OnFieldChanged"
+                               class="form-control" placeholder="Заголовок" />
                     </div>
-                    <textarea @bind="_editBody" class="editor-textarea" rows="20"></textarea>
+                    <textarea @bind="_editBody" @bind:event="oninput" @bind:after="OnFieldChanged"
+                              class="editor-textarea" rows="20"></textarea>
                 }
                 else
                 {
@@ -63,7 +62,7 @@ else
     private Note? _selectedNote;
     private string _editTitle = "";
     private string _editBody = "";
-    private bool _dirty;
+    private CancellationTokenSource? _autosaveCts;
     private List<string> _quietMemory = new();
 
     protected override async Task OnInitializedAsync()
@@ -83,36 +82,55 @@ else
         StateHasChanged();
     }
 
+    private void OnFieldChanged()
+    {
+        ScheduleAutosave();
+    }
+
+    private void ScheduleAutosave()
+    {
+        _autosaveCts?.Cancel();
+        _autosaveCts = new CancellationTokenSource();
+        var token = _autosaveCts.Token;
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(800, token);
+            if (!token.IsCancellationRequested)
+            {
+                await InvokeAsync(AutosaveAsync);
+            }
+        }, token);
+    }
+
+    private async Task AutosaveAsync()
+    {
+        if (_selectedNote is null) return;
+        var updated = _selectedNote with { Title = _editTitle, Body = _editBody };
+        _selectedNote = await Session.Notes.SaveAsync(updated);
+        await ReloadNotesAsync();
+    }
+
     private async Task SelectNoteAsync(Note note)
     {
-        if (_dirty && _selectedNote is not null)
+        if (_selectedNote?.Id != note.Id)
         {
-            await SaveNoteAsync();
+            _autosaveCts?.Cancel();
+            await AutosaveAsync();
         }
         _selectedNote = note;
         _editTitle = note.Title;
         _editBody = note.Body;
-        _dirty = false;
         RefreshQuietMemory(note);
         StateHasChanged();
     }
 
     private async Task NewNoteAsync()
     {
-        if (_dirty && _selectedNote is not null) await SaveNoteAsync();
+        _autosaveCts?.Cancel();
+        await AutosaveAsync();
         var note = await Session.Notes.CreateAsync(Session.CurrentVault!, "Без названия", "Начните писать...");
         await ReloadNotesAsync();
         await SelectNoteAsync(note);
-    }
-
-    private async Task SaveNoteAsync()
-    {
-        if (_selectedNote is null) return;
-        var updated = _selectedNote with { Title = _editTitle, Body = _editBody };
-        _selectedNote = await Session.Notes.SaveAsync(updated);
-        _dirty = false;
-        await ReloadNotesAsync();
-        StateHasChanged();
     }
 
     private void RefreshQuietMemory(Note note)
@@ -121,5 +139,11 @@ else
             .Suggest(new MemoryQuery(note, note.Body, 5))
             .Select(c => c.Note.Title)
             .ToList();
+    }
+
+    public void Dispose()
+    {
+        _autosaveCts?.Cancel();
+        _autosaveCts?.Dispose();
     }
 }
