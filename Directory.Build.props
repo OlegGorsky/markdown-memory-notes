@@ -5,6 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);NU1903</NoWarn>
     <AnalysisMode>AllEnabledByDefault</AnalysisMode>
   </PropertyGroup>
 </Project>
