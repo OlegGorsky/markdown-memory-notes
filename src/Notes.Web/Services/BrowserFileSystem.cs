@@ -17,7 +17,7 @@ public sealed class BrowserFileSystem : IFileSystem, IAsyncDisposable
     {
         this.js = js;
         module = new Lazy<Task<IJSObjectReference>>(() =>
-            js.InvokeAsync<IJSObjectReference>("import", "/js/file-system-access.js").AsTask());
+            js.InvokeAsync<IJSObjectReference>("import", "./js/file-system-access.js").AsTask());
     }
 
     public bool IsAvailable { get; private set; }
