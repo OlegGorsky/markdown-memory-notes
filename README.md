@@ -38,9 +38,43 @@ nix develop --command dotnet run --project src/Notes.Cli/Notes.Cli.csproj -- ind
 ## Projects
 
 - `Notes.Core`: vault, Markdown, inbox, fragments, trails, search, quiet memory.
-- `Notes.Desktop`: Avalonia desktop app.
+- `Notes.Desktop`: Avalonia desktop app (Linux, macOS, Windows).
 - `Notes.Cli`: command-line client over the same core.
+- `Notes.Mobile`: Avalonia mobile app (Android + iOS).
 
-## MVP boundaries
+## Publish & Run
 
-This MVP does not include cloud sync, collaboration, plugin marketplace, built-in AI providers, mobile apps, full WYSIWYG editing, event sourcing, encryption, or full transclusion rendering.
+```bash
+# Build all desktop platforms:
+./publish-all.sh
+
+# Run desktop (auto-detects NixOS):
+./run-desktop.sh
+
+# Or run directly:
+nix develop --command dotnet run --project src/Notes.Desktop/Notes.Desktop.csproj
+```
+
+Desktop outputs in `publish/<rid>/`:
+
+| RID | Platform |
+|-----|----------|
+| `linux-x64` | Linux x86_64 |
+| `win-x64` | Windows x64 |
+| `osx-x64` | macOS Intel |
+| `osx-arm64` | macOS Apple Silicon |
+
+> On NixOS, use `nix develop` + `dotnet run`. Self-contained binaries work on standard distributions.
+
+### Mobile
+
+Mobile projects require platform workloads not available in the Nix .NET SDK.
+Build on a machine with full .NET SDK:
+
+```bash
+# Android (needs .NET Android workload + Android SDK):
+dotnet publish src/Notes.Mobile/Notes.Mobile.csproj -f net10.0-android -c Release
+
+# iOS (needs macOS + Xcode + .NET iOS workload):
+dotnet publish src/Notes.Mobile/Notes.Mobile.csproj -f net10.0-ios -c Release
+```

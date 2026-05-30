@@ -1,0 +1,64 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Notes.Mobile.ViewModels"
+             x:Class="Notes.Mobile.Views.MobileMainView"
+             x:DataType="vm:MobileMainViewModel"
+             Background="#F4EFE6">
+  <Grid RowDefinitions="Auto,*,Auto" Margin="12">
+    <!-- Capture bar -->
+    <StackPanel Spacing="8" Margin="0,8">
+      <TextBox Text="{Binding CaptureText}" Watermark="Capture a thought..."
+               AcceptsReturn="False" />
+      <Button Content="Capture" Command="{Binding CaptureCommand}" />
+    </StackPanel>
+
+    <!-- Note list and editor -->
+    <Grid Grid.Row="1" RowDefinitions="Auto,Auto,*">
+      <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8">
+        <TextBox Text="{Binding SearchQuery}" Watermark="Search..."
+                 Width="200" />
+        <Button Content="Find" Command="{Binding SearchNotesCommand}" />
+        <Button Content="+ New" Command="{Binding NewNoteCommand}" />
+      </StackPanel>
+
+      <ListBox Grid.Row="1"
+               ItemsSource="{Binding Notes}"
+               SelectedItem="{Binding SelectedNote}"
+               MaxHeight="200">
+        <ListBox.ItemTemplate>
+          <DataTemplate DataType="vm:Note">
+            <StackPanel Margin="0,4">
+              <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
+              <TextBlock Text="{Binding Excerpt}" FontSize="12" Opacity="0.7"
+                         MaxHeight="32" TextWrapping="Wrap" />
+            </StackPanel>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+
+      <Grid Grid.Row="2" RowDefinitions="*,Auto">
+        <TextBox Text="{Binding NoteBody}"
+                 AcceptsReturn="True"
+                 Watermark="Start writing..."
+                 TextWrapping="Wrap"
+                 Margin="0,8" />
+        <Button Grid.Row="1" Content="Save"
+                Command="{Binding SaveNoteCommand}" />
+      </Grid>
+    </Grid>
+
+    <!-- Status -->
+    <Border Grid.Row="2" Background="#EEE6D8" Padding="8" Margin="0,4,0,0">
+      <StackPanel>
+        <TextBlock Text="{Binding Status}" FontSize="12" Foreground="#6E6252" />
+        <ItemsControl ItemsSource="{Binding QuietMemoryItems}" Margin="0,4,0,0">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate DataType="vm:String">
+              <TextBlock Text="{Binding}" FontSize="11" Opacity="0.6" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </Border>
+  </Grid>
+</UserControl>
