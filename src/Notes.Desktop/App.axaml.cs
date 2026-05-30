@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Notes.Desktop.ViewModels;
 using Notes.Desktop.Views;
 
 namespace Notes.Desktop;
@@ -16,7 +17,10 @@ public sealed partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            desktop.MainWindow = new MainWindow();
+            desktop.MainWindow = new MainWindow
+            {
+                DataContext = new MainWindowViewModel()
+            };
         }
 
         base.OnFrameworkInitializationCompleted();
