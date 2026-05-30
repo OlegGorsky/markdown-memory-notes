@@ -14,6 +14,7 @@
     <link rel="apple-touch-icon" sizes="512x512" href="icon-512.png" />
     <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png" />
     <style>#blazor-error-ui{display:none}</style>
+    <style>#app{background:#1E1C19;min-height:100vh}</style>
     <script>
         // Theme: dark by default, toggle with localStorage
         (function(){
@@ -37,12 +38,12 @@
 </head>
 
 <body>
-    <div id="app">
-        <svg class="loading-progress">
-            <circle r="40%" cx="50%" cy="50%" />
-            <circle r="40%" cx="50%" cy="50%" />
+    <div id="app" style="background:#1E1C19;min-height:100vh">
+        <svg class="loading-progress" style="display:none">
+            <circle r="40%" cx="50%" cy="50%" fill="none" />
+            <circle r="40%" cx="50%" cy="50%" fill="none" />
         </svg>
-        <div class="loading-progress-text"></div>
+        <div class="loading-progress-text" style="display:none"></div>
     </div>
 
     <div id="blazor-error-ui">
