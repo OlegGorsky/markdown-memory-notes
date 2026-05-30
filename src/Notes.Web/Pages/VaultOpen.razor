@@ -3,17 +3,17 @@
 @inject NavigationManager Nav
 
 <div class="vault-open">
-    <h1>Заметки с памятью</h1>
+    <h1>GorseeNote</h1>
     <p class="lead">Заметки, которые помнят ход мысли.</p>
 
     @if (_restoring)
     {
-        <p class="text-muted">Восстанавливаю хранилище...</p>
+        <p class="text-muted">Восстанавливаю...</p>
     }
     else
     {
         <button class="glass-btn glass-btn-accent glass-btn-lg" @onclick="OpenVault">
-            Открыть папку хранилища
+            Открыть папку
         </button>
     }
 
@@ -21,11 +21,6 @@
     {
         <div class="glass-alert glass-alert-danger mt-3">@_error</div>
     }
-
-    <p class="mt-3 text-muted small">
-        Ваши заметки остаются на устройстве. Приложение читает и пишет
-        Markdown-файлы напрямую в выбранной папке.
-    </p>
 </div>
 
 @code {

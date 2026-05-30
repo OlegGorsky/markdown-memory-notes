@@ -1,13 +1,13 @@
 {
-  "name": "Заметки с памятью",
-  "short_name": "Заметки",
-  "description": "Заметки, которые помнят ход мысли. Локальные Markdown-заметки.",
+  "name": "GorseeNote",
+  "short_name": "GorseeNote",
+  "description": "Заметки, которые помнят ход мысли.",
   "lang": "ru",
   "id": "./",
   "start_url": "./",
   "display": "standalone",
-  "background_color": "#1E1C19",
-  "theme_color": "#252320",
+  "background_color": "#050508",
+  "theme_color": "#0A0A12",
   "prefer_related_applications": false,
   "icons": [
     {
