@@ -78,3 +78,10 @@ dotnet publish src/Notes.Mobile/Notes.Mobile.csproj -f net10.0-android -c Releas
 # iOS (needs macOS + Xcode + .NET iOS workload):
 dotnet publish src/Notes.Mobile/Notes.Mobile.csproj -f net10.0-ios -c Release
 ```
+
+## Live PWA
+
+**[Open Memory Notes](https://oleggorsky.github.io/markdown-memory-notes/)**
+
+Open in Chrome/Edge, click "Open vault folder" to select a local Markdown folder.
+Auto-deployed from master via GitHub Actions.
