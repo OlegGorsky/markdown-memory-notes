@@ -1,0 +1,10 @@
+global using MemoryNotes.Web.Services;
+global using Notes.Core.Files;
+global using Notes.Core.Fragments;
+global using Notes.Core.Inbox;
+global using Notes.Core.Markdown;
+global using Notes.Core.Memory;
+global using Notes.Core.Notes;
+global using Notes.Core.Search;
+global using Notes.Core.Trails;
+global using Notes.Core.Vault;

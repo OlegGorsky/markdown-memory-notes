@@ -1,0 +1,50 @@
+@page "/search"
+@inject WebVaultSession Session
+
+<PageTitle>Search — Memory Notes</PageTitle>
+
+@if (!Session.IsOpen)
+{
+    <VaultOpen />
+}
+else
+{
+    <h4>Search</h4>
+    <div class="input-group mb-3">
+        <input @bind="_query" class="form-control" placeholder="Search notes..."
+               @onkeydown="HandleKeyDown" />
+        <button class="btn btn-primary" @onclick="DoSearch">Find</button>
+    </div>
+
+    @if (_results is not null)
+    {
+        <p class="text-muted">@_results.Count results</p>
+        @foreach (var result in _results)
+        {
+            <div class="card mb-2">
+                <div class="card-body py-2">
+                    <strong>@result.Note.Title</strong>
+                    <span class="badge bg-info ms-2">@result.Score</span>
+                    <small class="text-muted d-block">@result.Note.Excerpt</small>
+                </div>
+            </div>
+        }
+    }
+}
+
+@code {
+    private string _query = "";
+    private List<SearchResult>? _results;
+
+    private void DoSearch()
+    {
+        if (string.IsNullOrWhiteSpace(_query)) return;
+        Session.RebuildIndex();
+        _results = Session.Search(_query).ToList();
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") DoSearch();
+    }
+}

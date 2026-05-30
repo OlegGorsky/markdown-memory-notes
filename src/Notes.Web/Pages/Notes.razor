@@ -1,0 +1,119 @@
+@page "/"
+@inject WebVaultSession Session
+@inject BrowserFileSystem FS
+
+<PageTitle>Memory Notes</PageTitle>
+
+@if (!Session.IsOpen)
+{
+    <VaultOpen />
+}
+else
+{
+    <div class="app-shell">
+        <div class="toolbar">
+            <span class="vault-name">@Session.CurrentVault!.RootPath</span>
+            <button class="btn btn-primary btn-sm" @onclick="NewNote">+ New</button>
+        </div>
+
+        <div class="main-grid">
+            <div class="note-list">
+                <h5>Notes (@_notes.Count)</h5>
+                @foreach (var note in _notes)
+                {
+                    <div class="note-card @(note == _selectedNote ? "selected" : "")"
+                         @onclick="() => SelectNote(note)">
+                        <div class="note-title">@note.Title</div>
+                        <div class="note-excerpt">@note.Excerpt</div>
+                    </div>
+                }
+            </div>
+
+            <div class="editor">
+                @if (_selectedNote is not null)
+                {
+                    <div class="editor-header">
+                        <input @bind="_editTitle" class="form-control" placeholder="Title" />
+                        <span class="save-state @(_dirty ? "unsaved" : "saved")">
+                            @(_dirty ? "Unsaved" : "Saved")
+                        </span>
+                        <button class="btn btn-sm btn-success" @onclick="SaveNote" disabled="@(!_dirty)">Save</button>
+                    </div>
+                    <textarea @bind="_editBody" class="editor-textarea" rows="20"></textarea>
+                }
+                else
+                {
+                    <p class="text-muted text-center mt-5">Select a note or create a new one.</p>
+                }
+            </div>
+
+            <div class="side-panel">
+                <h6>Quiet memory</h6>
+                @foreach (var item in _quietMemory)
+                {
+                    <div class="memory-item">@item</div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Note> _notes = new();
+    private Note? _selectedNote;
+    private string _editTitle = "";
+    private string _editBody = "";
+    private bool _dirty;
+    private List<string> _quietMemory = new();
+
+    protected override void OnInitialized()
+    {
+        if (Session.IsOpen) ReloadNotes();
+    }
+
+    private void ReloadNotes()
+    {
+        _notes = Session.RebuildIndex().ToList();
+        StateHasChanged();
+    }
+
+    private void SelectNote(Note note)
+    {
+        if (_dirty && _selectedNote is not null)
+        {
+            SaveNote();
+        }
+        _selectedNote = note;
+        _editTitle = note.Title;
+        _editBody = note.Body;
+        _dirty = false;
+        RefreshQuietMemory(note);
+        StateHasChanged();
+    }
+
+    private void NewNote()
+    {
+        if (_dirty && _selectedNote is not null) SaveNote();
+        var note = Session.Notes.Create(Session.CurrentVault!, "Untitled", "Start writing...");
+        ReloadNotes();
+        SelectNote(note);
+    }
+
+    private void SaveNote()
+    {
+        if (_selectedNote is null) return;
+        var updated = _selectedNote with { Title = _editTitle, Body = _editBody };
+        _selectedNote = Session.Notes.Save(updated);
+        _dirty = false;
+        ReloadNotes();
+        StateHasChanged();
+    }
+
+    private void RefreshQuietMemory(Note note)
+    {
+        _quietMemory = Session.QuietMemory
+            .Suggest(new MemoryQuery(note, note.Body, 5))
+            .Select(c => c.Note.Title)
+            .ToList();
+    }
+}

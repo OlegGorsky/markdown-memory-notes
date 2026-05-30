@@ -1,0 +1,70 @@
+@page "/trails"
+@inject WebVaultSession Session
+
+<PageTitle>Trails — Memory Notes</PageTitle>
+
+@if (!Session.IsOpen)
+{
+    <VaultOpen />
+}
+else
+{
+    <h4>Thought Trails</h4>
+    <p class="text-muted">Saved routes through your ideas.</p>
+
+    <div class="input-group mb-3">
+        <input @bind="_newTrailTitle" class="form-control" placeholder="Trail title..." />
+        <button class="btn btn-primary" @onclick="CreateTrail"
+                disabled="@(string.IsNullOrWhiteSpace(_newTrailTitle))">
+            Create trail
+        </button>
+    </div>
+
+    @if (_trails.Count == 0)
+    {
+        <p class="text-muted">No trails yet. Capture your reasoning path.</p>
+    }
+    else
+    {
+        @foreach (var trail in _trails)
+        {
+            <div class="card mb-2">
+                <div class="card-body py-2">
+                    <strong>@trail.Title</strong>
+                    <span class="badge bg-secondary ms-2">@trail.Items.Count items</span>
+                    <div class="mt-1">
+                        @foreach (var item in trail.Items)
+                        {
+                            <span class="badge bg-light text-dark me-1">
+                                @(item.FragmentId is null ? $"note:{item.NoteId}" : $"frag:{item.FragmentId}")
+                            </span>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    }
+}
+
+@code {
+    private string _newTrailTitle = "";
+    private List<Trail> _trails = new();
+
+    protected override void OnInitialized()
+    {
+        if (Session.IsOpen) LoadTrails();
+    }
+
+    private void LoadTrails()
+    {
+        _trails = Session.Trails.List(Session.CurrentVault!).ToList();
+    }
+
+    private void CreateTrail()
+    {
+        if (string.IsNullOrWhiteSpace(_newTrailTitle)) return;
+        Session.Trails.Create(Session.CurrentVault!, _newTrailTitle);
+        _newTrailTitle = "";
+        LoadTrails();
+    }
+}

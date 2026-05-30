@@ -1,0 +1,23 @@
+{
+  "name": "Markdown Memory Notes",
+  "short_name": "Memory Notes",
+  "description": "Notes that remember how you think. Local-first Markdown notes.",
+  "id": "./",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#F4EFE6",
+  "theme_color": "#EEE6D8",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    },
+    {
+      "src": "icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    }
+  ]
+}

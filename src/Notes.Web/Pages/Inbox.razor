@@ -1,0 +1,78 @@
+@page "/inbox"
+@inject WebVaultSession Session
+
+<PageTitle>Inbox — Memory Notes</PageTitle>
+
+@if (!Session.IsOpen)
+{
+    <VaultOpen />
+}
+else
+{
+    <h4>Inbox</h4>
+    <p class="text-muted">Quick capture — thoughts that don't have a home yet.</p>
+
+    <div class="input-group mb-3">
+        <input @bind="_text" class="form-control" placeholder="Capture a thought..."
+               @onkeydown="HandleKeyDown" />
+        <button class="btn btn-primary" @onclick="Capture" disabled="@(string.IsNullOrWhiteSpace(_text))">
+            Capture
+        </button>
+    </div>
+
+    @if (_status is not null)
+    {
+        <div class="alert alert-success">@_status</div>
+    }
+
+    <h5 class="mt-4">Recent captures</h5>
+    @if (_recentNotes.Count == 0)
+    {
+        <p class="text-muted">No notes yet.</p>
+    }
+    else
+    {
+        @foreach (var note in _recentNotes)
+        {
+            <div class="card mb-2">
+                <div class="card-body py-2">
+                    <strong>@note.Title</strong>
+                    <small class="text-muted d-block">@note.Excerpt</small>
+                </div>
+            </div>
+        }
+    }
+}
+
+@code {
+    private string _text = "";
+    private string? _status;
+    private List<Note> _recentNotes = new();
+
+    protected override void OnInitialized()
+    {
+        if (Session.IsOpen) LoadRecent();
+    }
+
+    private void LoadRecent()
+    {
+        _recentNotes = Session.RebuildIndex().Take(20).ToList();
+    }
+
+    private void Capture()
+    {
+        if (string.IsNullOrWhiteSpace(_text)) return;
+        Session.Inbox.Capture(Session.CurrentVault!, _text);
+        _status = $"Captured: {_text[..Math.Min(_text.Length, 50)]}";
+        _text = "";
+        LoadRecent();
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.CtrlKey && !e.ShiftKey)
+        {
+            Capture();
+        }
+    }
+}

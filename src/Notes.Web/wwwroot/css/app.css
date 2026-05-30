@@ -1,0 +1,176 @@
+/* Markdown Memory Notes — Blazor WASM styles */
+:root {
+    --paper: #F4EFE6;
+    --warm-paper: #FAF7F0;
+    --light-paper: #FFFDF8;
+    --ink: #2E2A25;
+    --muted: #6E6252;
+    --border: #D8CBB7;
+    --active: #B8956A;
+    --amber: #D4A046;
+}
+
+body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* Vault open screen */
+.vault-open {
+    text-align: center;
+    padding: 120px 20px;
+}
+
+.vault-open h1 {
+    color: var(--ink);
+    font-size: 2.2rem;
+}
+
+/* App shell */
+.app-shell {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 56px);
+}
+
+.toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    background: #EEE6D8;
+    border-bottom: 1px solid var(--border);
+}
+
+.vault-name {
+    font-weight: 600;
+    color: var(--ink);
+    font-size: 0.9rem;
+}
+
+.main-grid {
+    display: grid;
+    grid-template-columns: 250px 1fr 200px;
+    gap: 0;
+    flex: 1;
+    overflow: hidden;
+}
+
+/* Note list */
+.note-list {
+    background: var(--warm-paper);
+    border-right: 1px solid var(--border);
+    padding: 12px;
+    overflow-y: auto;
+}
+
+.note-card {
+    padding: 10px;
+    margin-bottom: 4px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.note-card:hover {
+    background: #EDE6D6;
+}
+
+.note-card.selected {
+    background: #E8DCC4;
+    border-left: 3px solid var(--active);
+}
+
+.note-title {
+    font-weight: 600;
+    margin-bottom: 2px;
+}
+
+.note-excerpt {
+    font-size: 0.82rem;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Editor */
+.editor {
+    background: var(--light-paper);
+    display: flex;
+    flex-direction: column;
+}
+
+.editor-header {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border);
+}
+
+.save-state {
+    font-size: 0.8rem;
+    min-width: 60px;
+}
+
+.save-state.saved { color: #5A8A4A; }
+.save-state.unsaved { color: var(--amber); font-weight: 600; }
+
+.editor-textarea {
+    flex: 1;
+    border: none;
+    resize: none;
+    padding: 18px;
+    font-family: 'JetBrains Mono', 'Cascadia Mono', monospace;
+    font-size: 14px;
+    background: var(--light-paper);
+    color: var(--ink);
+    outline: none;
+    line-height: 1.7;
+}
+
+/* Side panel */
+.side-panel {
+    background: #F7F1E8;
+    border-left: 1px solid var(--border);
+    padding: 12px;
+    overflow-y: auto;
+}
+
+.side-panel h6 {
+    font-weight: 600;
+    color: var(--ink);
+    margin-bottom: 8px;
+}
+
+.memory-item {
+    padding: 6px 0;
+    font-size: 0.85rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.memory-item:last-child {
+    border-bottom: none;
+}
+
+/* Cards and badges */
+.card {
+    background: white;
+    border: 1px solid var(--border);
+}
+
+.badge {
+    font-weight: 500;
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+    .main-grid {
+        grid-template-columns: 1fr;
+    }
+    .note-list, .side-panel {
+        display: none;
+    }
+}
