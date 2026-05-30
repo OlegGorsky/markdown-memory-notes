@@ -22,6 +22,9 @@
 </div>
 
 @code {
+    [Parameter]
+    public EventCallback VaultOpened { get; set; }
+
     private string? _error;
 
     private async Task OpenVault()
@@ -32,7 +35,7 @@
             var name = await FS.OpenVaultAsync();
             if (name is null) return;
             await Session.OpenOrCreateAsync(name);
-            Nav.NavigateTo("/", forceLoad: false);
+            await VaultOpened.InvokeAsync();
         }
         catch (Exception ex)
         {

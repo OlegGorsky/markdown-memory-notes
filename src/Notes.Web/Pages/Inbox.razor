@@ -5,7 +5,7 @@
 
 @if (!Session.IsOpen)
 {
-    <VaultOpen />
+    <VaultOpen VaultOpened="OnVaultOpened" />
 }
 else
 {
@@ -52,6 +52,12 @@ else
     protected override async Task OnInitializedAsync()
     {
         if (Session.IsOpen) await LoadRecentAsync();
+    }
+
+    private async Task OnVaultOpened()
+    {
+        await LoadRecentAsync();
+        StateHasChanged();
     }
 
     private async Task LoadRecentAsync()

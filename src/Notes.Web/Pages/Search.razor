@@ -5,7 +5,7 @@
 
 @if (!Session.IsOpen)
 {
-    <VaultOpen />
+    <VaultOpen VaultOpened="OnVaultOpened" />
 }
 else
 {
@@ -35,6 +35,11 @@ else
 @code {
     private string _query = "";
     private List<SearchResult>? _results;
+
+    private async Task OnVaultOpened()
+    {
+        StateHasChanged();
+    }
 
     private async Task DoSearchAsync()
     {
