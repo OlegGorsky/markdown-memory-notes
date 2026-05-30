@@ -13,31 +13,12 @@
     <link rel="apple-touch-icon" sizes="512x512" href="icon-512.png" />
     <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png" />
     <style>#blazor-error-ui{display:none}</style>
-    <style>#app{background:#1E1C19;min-height:100vh}</style>
-    <script>
-        // Theme: dark by default, toggle with localStorage
-        (function(){
-            const html = document.documentElement;
-            const saved = localStorage.getItem('mmn-theme');
-            if (saved === 'light') html.classList.add('light');
-            else if (saved === 'dark') html.classList.add('dark');
-            else html.classList.add('dark'); // default dark
-            window.toggleTheme = function(){
-                if (html.classList.contains('dark')) {
-                    html.classList.remove('dark'); html.classList.add('light');
-                    localStorage.setItem('mmn-theme','light');
-                } else {
-                    html.classList.remove('light'); html.classList.add('dark');
-                    localStorage.setItem('mmn-theme','dark');
-                }
-            };
-        })();
-    </script>
+    <style>#app{background:#08080D;min-height:100vh}</style>
     <script type="importmap"></script>
 </head>
 
 <body>
-    <div id="app" style="background:#1E1C19;min-height:100vh">
+    <div id="app" style="background:#08080D;min-height:100vh">
         <svg class="loading-progress" style="display:none">
             <circle r="40%" cx="50%" cy="50%" fill="none" />
             <circle r="40%" cx="50%" cy="50%" fill="none" />

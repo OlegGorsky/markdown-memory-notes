@@ -1,21 +1,9 @@
 @inherits LayoutComponentBase
-@inject IJSRuntime JS
 
 <div class="page">
-    <button class="theme-toggle" @onclick="ToggleTheme" title="Переключить тему">
-        🌓
-    </button>
-
     <main>
-        <article class="content px-4">
+        <article class="content">
             @Body
         </article>
     </main>
 </div>
-
-@code {
-    private async Task ToggleTheme()
-    {
-        await JS.InvokeVoidAsync("toggleTheme");
-    }
-}

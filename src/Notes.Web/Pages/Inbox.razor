@@ -9,20 +9,21 @@
 }
 else
 {
+    <div class="page-content animate-in">
     <h4>Входящие</h4>
     <p class="text-muted">Быстрый захват — мысли, у которых ещё нет своего места.</p>
 
-    <div class="input-group mb-3">
-        <input @bind="_text" class="form-control" placeholder="Запишите мысль..."
+    <div class="input-group">
+        <input @bind="_text" class="glass-input" placeholder="Запишите мысль..."
                @onkeydown="HandleKeyDown" />
-        <button class="btn btn-primary" @onclick="CaptureAsync" disabled="@(string.IsNullOrWhiteSpace(_text))">
+        <button class="glass-btn glass-btn-accent" @onclick="CaptureAsync" disabled="@(string.IsNullOrWhiteSpace(_text))">
             Записать
         </button>
     </div>
 
     @if (_status is not null)
     {
-        <div class="alert alert-success">@_status</div>
+        <div class="glass-alert glass-alert-success">@_status</div>
     }
 
     <h5 class="mt-4">Последние записи</h5>
@@ -34,14 +35,13 @@ else
     {
         @foreach (var note in _recentNotes)
         {
-            <div class="card mb-2">
-                <div class="card-body py-2">
-                    <strong>@note.Title</strong>
-                    <small class="text-muted d-block">@note.Excerpt</small>
-                </div>
+            <div class="result-card">
+                <strong>@note.Title</strong>
+                <small class="d-block">@note.Excerpt</small>
             </div>
         }
     }
+    </div>
 }
 
 @code {

@@ -14,7 +14,7 @@ else
     <div class="app-shell">
         <div class="toolbar">
             <span class="vault-name">@Session.CurrentVault!.RootPath</span>
-            <button class="btn btn-primary btn-sm" @onclick="NewNoteAsync">+ Новая</button>
+            <button class="glass-btn glass-btn-accent glass-btn-sm" @onclick="NewNoteAsync">+ Новая</button>
         </div>
 
         <div class="main-grid">
@@ -35,7 +35,7 @@ else
                 {
                     <div class="editor-header">
                         <input @bind="_editTitle" @bind:event="oninput" @bind:after="OnFieldChanged"
-                               class="form-control" placeholder="Заголовок" />
+                               class="glass-input" placeholder="Заголовок" />
                     </div>
                     <textarea @bind="_editBody" @bind:event="oninput" @bind:after="OnFieldChanged"
                               class="editor-textarea" rows="20"></textarea>

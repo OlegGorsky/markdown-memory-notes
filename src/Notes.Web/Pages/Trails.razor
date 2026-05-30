@@ -9,12 +9,13 @@
 }
 else
 {
+    <div class="page-content animate-in">
     <h4>Цепочки мыслей</h4>
     <p class="text-muted">Сохранённые маршруты через ваши идеи.</p>
 
-    <div class="input-group mb-3">
-        <input @bind="_newTrailTitle" class="form-control" placeholder="Название цепочки..." />
-        <button class="btn btn-primary" @onclick="CreateTrailAsync"
+    <div class="input-group">
+        <input @bind="_newTrailTitle" class="glass-input" placeholder="Название цепочки..." />
+        <button class="glass-btn glass-btn-accent" @onclick="CreateTrailAsync"
                 disabled="@(string.IsNullOrWhiteSpace(_newTrailTitle))">
             Создать цепочку
         </button>
@@ -28,22 +29,21 @@ else
     {
         @foreach (var trail in _trails)
         {
-            <div class="card mb-2">
-                <div class="card-body py-2">
-                    <strong>@trail.Title</strong>
-                    <span class="badge bg-secondary ms-2">@trail.Items.Count эл.</span>
-                    <div class="mt-1">
-                        @foreach (var item in trail.Items)
-                        {
-                            <span class="badge bg-light text-dark me-1">
-                                @(item.FragmentId is null ? $"заметка:{item.NoteId}" : $"фрагмент:{item.FragmentId}")
-                            </span>
-                        }
-                    </div>
+            <div class="result-card">
+                <strong>@trail.Title</strong>
+                <span class="glass-badge ms-2">@trail.Items.Count эл.</span>
+                <div class="mt-2">
+                    @foreach (var item in trail.Items)
+                    {
+                        <span class="glass-badge me-1">
+                            @(item.FragmentId is null ? $"заметка:{item.NoteId}" : $"фрагмент:{item.FragmentId}")
+                        </span>
+                    }
                 </div>
             </div>
         }
     }
+    </div>
 }
 
 @code {
