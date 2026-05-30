@@ -5,18 +5,11 @@ on:
     branches: [master]
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: pages
-  cancel-in-progress: true
-
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -24,27 +17,15 @@ jobs:
         with:
           dotnet-version: '10.0'
 
-      - name: Restore
-        run: dotnet restore src/Notes.Web/Notes.Web.csproj
+      - name: Publish Blazor WASM
+        run: |
+          dotnet restore src/Notes.Web/Notes.Web.csproj
+          dotnet publish src/Notes.Web/Notes.Web.csproj -c Release -o publish/web
 
-      - name: Build
-        run: dotnet build src/Notes.Web/Notes.Web.csproj -c Release --no-restore
-
-      - name: Publish
-        run: dotnet publish src/Notes.Web/Notes.Web.csproj -c Release -o publish/web
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          path: publish/web/wwwroot
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: publish/web/wwwroot
+          publish_branch: gh-pages
+          force_orphan: true
