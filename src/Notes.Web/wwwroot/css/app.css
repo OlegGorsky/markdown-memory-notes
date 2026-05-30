@@ -58,6 +58,14 @@ body {
     font-family: system-ui, -apple-system, sans-serif;
 }
 
+/* Blazor loading indicator — hidden since app loads fast */
+.loading-progress {
+    display: none;
+}
+.loading-progress-text {
+    display: none;
+}
+
 /* Theme toggle */
 .theme-toggle {
     position: fixed;
