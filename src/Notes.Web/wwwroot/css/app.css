@@ -1,4 +1,4 @@
-/* Markdown Memory Notes — Blazor WASM styles */
+/* Заметки с памятью — стили */
 :root {
     --paper: #F4EFE6;
     --warm-paper: #FAF7F0;
@@ -8,12 +8,69 @@
     --border: #D8CBB7;
     --active: #B8956A;
     --amber: #D4A046;
+    --card-bg: #ffffff;
+    --toolbar-bg: #EEE6D8;
+    --side-bg: #F7F1E8;
+    --hover-bg: #EDE6D6;
+    --selected-bg: #E8DCC4;
+    --saved: #5A8A4A;
+}
+
+html.dark {
+    --paper: #1E1C19;
+    --warm-paper: #252320;
+    --light-paper: #2A2723;
+    --ink: #E8E0D5;
+    --muted: #A09080;
+    --border: #3D3830;
+    --active: #C4A87A;
+    --amber: #D4A046;
+    --card-bg: #2E2B26;
+    --toolbar-bg: #252320;
+    --side-bg: #23201D;
+    --hover-bg: #333028;
+    --selected-bg: #3D3830;
+    --saved: #6A9A5A;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not(.light) {
+        --paper: #1E1C19;
+        --warm-paper: #252320;
+        --light-paper: #2A2723;
+        --ink: #E8E0D5;
+        --muted: #A09080;
+        --border: #3D3830;
+        --active: #C4A87A;
+        --amber: #D4A046;
+        --card-bg: #2E2B26;
+        --toolbar-bg: #252320;
+        --side-bg: #23201D;
+        --hover-bg: #333028;
+        --selected-bg: #3D3830;
+        --saved: #6A9A5A;
+    }
 }
 
 body {
     background: var(--paper);
     color: var(--ink);
     font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* Theme toggle */
+.theme-toggle {
+    position: fixed;
+    top: 12px;
+    right: 16px;
+    z-index: 1000;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    color: var(--ink);
+    border-radius: 6px;
+    padding: 4px 10px;
+    cursor: pointer;
+    font-size: 1.1rem;
 }
 
 /* Vault open screen */
@@ -39,7 +96,7 @@ body {
     align-items: center;
     justify-content: space-between;
     padding: 8px 16px;
-    background: #EEE6D8;
+    background: var(--toolbar-bg);
     border-bottom: 1px solid var(--border);
 }
 
@@ -74,11 +131,11 @@ body {
 }
 
 .note-card:hover {
-    background: #EDE6D6;
+    background: var(--hover-bg);
 }
 
 .note-card.selected {
-    background: #E8DCC4;
+    background: var(--selected-bg);
     border-left: 3px solid var(--active);
 }
 
@@ -110,12 +167,23 @@ body {
     border-bottom: 1px solid var(--border);
 }
 
-.save-state {
-    font-size: 0.8rem;
-    min-width: 60px;
+.editor-header input {
+    background: var(--card-bg);
+    color: var(--ink);
+    border-color: var(--border);
 }
 
-.save-state.saved { color: #5A8A4A; }
+.editor-header input::placeholder {
+    color: var(--muted);
+}
+
+.save-state {
+    font-size: 0.8rem;
+    min-width: 70px;
+    white-space: nowrap;
+}
+
+.save-state.saved { color: var(--saved); }
 .save-state.unsaved { color: var(--amber); font-weight: 600; }
 
 .editor-textarea {
@@ -133,7 +201,7 @@ body {
 
 /* Side panel */
 .side-panel {
-    background: #F7F1E8;
+    background: var(--side-bg);
     border-left: 1px solid var(--border);
     padding: 12px;
     overflow-y: auto;
@@ -155,15 +223,46 @@ body {
     border-bottom: none;
 }
 
-/* Cards and badges */
+/* Cards */
 .card {
-    background: white;
+    background: var(--card-bg);
     border: 1px solid var(--border);
+    color: var(--ink);
 }
 
-.badge {
-    font-weight: 500;
+.text-muted { color: var(--muted) !important; }
+
+.badge.bg-light { background: var(--hover-bg) !important; color: var(--ink) !important; }
+.badge.bg-secondary { background: #6c757d !important; }
+.badge.bg-info { background: #5a8a7a !important; }
+
+/* Inputs */
+input.form-control, textarea.form-control {
+    background: var(--card-bg);
+    color: var(--ink);
+    border-color: var(--border);
 }
+
+input.form-control::placeholder, textarea.form-control::placeholder {
+    color: var(--muted);
+}
+
+input.form-control:focus, textarea.form-control:focus {
+    background: var(--card-bg);
+    color: var(--ink);
+    border-color: var(--active);
+    box-shadow: 0 0 0 0.2rem rgba(184, 149, 106, 0.15);
+}
+
+/* Alert */
+.alert-danger { background: #3D1F1F; border-color: #5A2A2A; color: #F0A0A0; }
+.alert-success { background: #1F3D1F; border-color: #2A5A2A; color: #A0F0A0; }
+
+/* Nav */
+.navbar-dark { background: var(--toolbar-bg); }
+.nav-link { color: var(--ink) !important; }
+.nav-link.active { color: var(--active) !important; }
+.nav-link:hover { color: var(--active) !important; }
 
 /* Mobile */
 @media (max-width: 768px) {

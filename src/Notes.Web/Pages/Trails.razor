@@ -1,7 +1,7 @@
 @page "/trails"
 @inject WebVaultSession Session
 
-<PageTitle>Trails — Memory Notes</PageTitle>
+<PageTitle>Цепочки мыслей — Заметки с памятью</PageTitle>
 
 @if (!Session.IsOpen)
 {
@@ -9,20 +9,20 @@
 }
 else
 {
-    <h4>Thought Trails</h4>
-    <p class="text-muted">Saved routes through your ideas.</p>
+    <h4>Цепочки мыслей</h4>
+    <p class="text-muted">Сохранённые маршруты через ваши идеи.</p>
 
     <div class="input-group mb-3">
-        <input @bind="_newTrailTitle" class="form-control" placeholder="Trail title..." />
+        <input @bind="_newTrailTitle" class="form-control" placeholder="Название цепочки..." />
         <button class="btn btn-primary" @onclick="CreateTrail"
                 disabled="@(string.IsNullOrWhiteSpace(_newTrailTitle))">
-            Create trail
+            Создать цепочку
         </button>
     </div>
 
     @if (_trails.Count == 0)
     {
-        <p class="text-muted">No trails yet. Capture your reasoning path.</p>
+        <p class="text-muted">Пока нет цепочек. Запишите ход своих рассуждений.</p>
     }
     else
     {
@@ -31,12 +31,12 @@ else
             <div class="card mb-2">
                 <div class="card-body py-2">
                     <strong>@trail.Title</strong>
-                    <span class="badge bg-secondary ms-2">@trail.Items.Count items</span>
+                    <span class="badge bg-secondary ms-2">@trail.Items.Count эл.</span>
                     <div class="mt-1">
                         @foreach (var item in trail.Items)
                         {
                             <span class="badge bg-light text-dark me-1">
-                                @(item.FragmentId is null ? $"note:{item.NoteId}" : $"frag:{item.FragmentId}")
+                                @(item.FragmentId is null ? $"заметка:{item.NoteId}" : $"фрагмент:{item.FragmentId}")
                             </span>
                         }
                     </div>

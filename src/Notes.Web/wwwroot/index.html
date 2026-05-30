@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Memory Notes</title>
+    <title>Заметки с памятью</title>
     <base href="/markdown-memory-notes/" />
     <link rel="preload" id="webassembly" />
     <link rel="stylesheet" href="lib/bootstrap/dist/css/bootstrap.min.css" />
@@ -14,6 +14,25 @@
     <link rel="apple-touch-icon" sizes="512x512" href="icon-512.png" />
     <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png" />
     <style>#blazor-error-ui{display:none}</style>
+    <script>
+        // Theme: dark by default, toggle with localStorage
+        (function(){
+            const html = document.documentElement;
+            const saved = localStorage.getItem('mmn-theme');
+            if (saved === 'light') html.classList.add('light');
+            else if (saved === 'dark') html.classList.add('dark');
+            else html.classList.add('dark'); // default dark
+            window.toggleTheme = function(){
+                if (html.classList.contains('dark')) {
+                    html.classList.remove('dark'); html.classList.add('light');
+                    localStorage.setItem('mmn-theme','light');
+                } else {
+                    html.classList.remove('light'); html.classList.add('dark');
+                    localStorage.setItem('mmn-theme','dark');
+                }
+            };
+        })();
+    </script>
     <script type="importmap"></script>
 </head>
 
@@ -27,9 +46,9 @@
     </div>
 
     <div id="blazor-error-ui">
-        An unhandled error has occurred.
-        <a href="." class="reload">Reload</a>
-        <span class="dismiss">🗙</span>
+        Произошла ошибка.
+        <a href="." class="reload">Перезагрузить</a>
+        <span class="dismiss">✕</span>
     </div>
     <script src="_framework/blazor.webassembly#[.{fingerprint}].js"></script>
     <script>navigator.serviceWorker.register('service-worker.js', { updateViaCache: 'none' });</script>

@@ -1,7 +1,7 @@
 @page "/search"
 @inject WebVaultSession Session
 
-<PageTitle>Search — Memory Notes</PageTitle>
+<PageTitle>Поиск — Заметки с памятью</PageTitle>
 
 @if (!Session.IsOpen)
 {
@@ -9,16 +9,16 @@
 }
 else
 {
-    <h4>Search</h4>
+    <h4>Поиск</h4>
     <div class="input-group mb-3">
-        <input @bind="_query" class="form-control" placeholder="Search notes..."
+        <input @bind="_query" class="form-control" placeholder="Поиск по заметкам..."
                @onkeydown="HandleKeyDown" />
-        <button class="btn btn-primary" @onclick="DoSearch">Find</button>
+        <button class="btn btn-primary" @onclick="DoSearch">Найти</button>
     </div>
 
     @if (_results is not null)
     {
-        <p class="text-muted">@_results.Count results</p>
+        <p class="text-muted">@_results.Count результатов</p>
         @foreach (var result in _results)
         {
             <div class="card mb-2">

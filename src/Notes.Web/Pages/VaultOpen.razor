@@ -3,12 +3,11 @@
 @inject NavigationManager Nav
 
 <div class="vault-open">
-    <h1>Markdown Memory Notes</h1>
-    <p class="lead">Notes that remember how you think.</p>
-    <p class="text-muted">Заметки, которые помнят ход мысли.</p>
+    <h1>Заметки с памятью</h1>
+    <p class="lead">Заметки, которые помнят ход мысли.</p>
 
     <button class="btn btn-primary btn-lg" @onclick="OpenVault">
-        Open vault folder
+        Открыть папку хранилища
     </button>
 
     @if (_error is not null)
@@ -17,8 +16,8 @@
     }
 
     <p class="mt-3 text-muted small">
-        Your notes stay on your device. The app reads and writes
-        Markdown files directly in the folder you choose.
+        Ваши заметки остаются на устройстве. Приложение читает и пишет
+        Markdown-файлы напрямую в выбранной папке.
     </p>
 </div>
 

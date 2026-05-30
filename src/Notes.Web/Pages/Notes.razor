@@ -2,7 +2,7 @@
 @inject WebVaultSession Session
 @inject BrowserFileSystem FS
 
-<PageTitle>Memory Notes</PageTitle>
+<PageTitle>Заметки с памятью</PageTitle>
 
 @if (!Session.IsOpen)
 {
@@ -13,12 +13,12 @@ else
     <div class="app-shell">
         <div class="toolbar">
             <span class="vault-name">@Session.CurrentVault!.RootPath</span>
-            <button class="btn btn-primary btn-sm" @onclick="NewNote">+ New</button>
+            <button class="btn btn-primary btn-sm" @onclick="NewNote">+ Новая</button>
         </div>
 
         <div class="main-grid">
             <div class="note-list">
-                <h5>Notes (@_notes.Count)</h5>
+                <h5>Заметки (@_notes.Count)</h5>
                 @foreach (var note in _notes)
                 {
                     <div class="note-card @(note == _selectedNote ? "selected" : "")"
@@ -33,22 +33,22 @@ else
                 @if (_selectedNote is not null)
                 {
                     <div class="editor-header">
-                        <input @bind="_editTitle" class="form-control" placeholder="Title" />
+                        <input @bind="_editTitle" class="form-control" placeholder="Заголовок" />
                         <span class="save-state @(_dirty ? "unsaved" : "saved")">
-                            @(_dirty ? "Unsaved" : "Saved")
+                            @(_dirty ? "Не сохранено" : "Сохранено")
                         </span>
-                        <button class="btn btn-sm btn-success" @onclick="SaveNote" disabled="@(!_dirty)">Save</button>
+                        <button class="btn btn-sm btn-success" @onclick="SaveNote" disabled="@(!_dirty)">Сохранить</button>
                     </div>
                     <textarea @bind="_editBody" class="editor-textarea" rows="20"></textarea>
                 }
                 else
                 {
-                    <p class="text-muted text-center mt-5">Select a note or create a new one.</p>
+                    <p class="text-muted text-center mt-5">Выберите заметку или создайте новую.</p>
                 }
             </div>
 
             <div class="side-panel">
-                <h6>Quiet memory</h6>
+                <h6>Тихая память</h6>
                 @foreach (var item in _quietMemory)
                 {
                     <div class="memory-item">@item</div>
@@ -94,7 +94,7 @@ else
     private void NewNote()
     {
         if (_dirty && _selectedNote is not null) SaveNote();
-        var note = Session.Notes.Create(Session.CurrentVault!, "Untitled", "Start writing...");
+        var note = Session.Notes.Create(Session.CurrentVault!, "Без названия", "Начните писать...");
         ReloadNotes();
         SelectNote(note);
     }

@@ -1,7 +1,7 @@
 @page "/inbox"
 @inject WebVaultSession Session
 
-<PageTitle>Inbox — Memory Notes</PageTitle>
+<PageTitle>Входящие — Заметки с памятью</PageTitle>
 
 @if (!Session.IsOpen)
 {
@@ -9,14 +9,14 @@
 }
 else
 {
-    <h4>Inbox</h4>
-    <p class="text-muted">Quick capture — thoughts that don't have a home yet.</p>
+    <h4>Входящие</h4>
+    <p class="text-muted">Быстрый захват — мысли, у которых ещё нет своего места.</p>
 
     <div class="input-group mb-3">
-        <input @bind="_text" class="form-control" placeholder="Capture a thought..."
+        <input @bind="_text" class="form-control" placeholder="Запишите мысль..."
                @onkeydown="HandleKeyDown" />
         <button class="btn btn-primary" @onclick="Capture" disabled="@(string.IsNullOrWhiteSpace(_text))">
-            Capture
+            Записать
         </button>
     </div>
 
@@ -25,10 +25,10 @@ else
         <div class="alert alert-success">@_status</div>
     }
 
-    <h5 class="mt-4">Recent captures</h5>
+    <h5 class="mt-4">Последние записи</h5>
     @if (_recentNotes.Count == 0)
     {
-        <p class="text-muted">No notes yet.</p>
+        <p class="text-muted">Пока нет заметок.</p>
     }
     else
     {
@@ -63,7 +63,7 @@ else
     {
         if (string.IsNullOrWhiteSpace(_text)) return;
         Session.Inbox.Capture(Session.CurrentVault!, _text);
-        _status = $"Captured: {_text[..Math.Min(_text.Length, 50)]}";
+        _status = $"Записано: {_text[..Math.Min(_text.Length, 50)]}";
         _text = "";
         LoadRecent();
     }

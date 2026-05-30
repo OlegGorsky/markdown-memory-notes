@@ -1,12 +1,13 @@
 {
-  "name": "Markdown Memory Notes",
-  "short_name": "Memory Notes",
-  "description": "Notes that remember how you think. Local-first Markdown notes.",
+  "name": "Заметки с памятью",
+  "short_name": "Заметки",
+  "description": "Заметки, которые помнят ход мысли. Локальные Markdown-заметки.",
+  "lang": "ru",
   "id": "./",
   "start_url": "./",
   "display": "standalone",
-  "background_color": "#F4EFE6",
-  "theme_color": "#EEE6D8",
+  "background_color": "#1E1C19",
+  "theme_color": "#252320",
   "prefer_related_applications": false,
   "icons": [
     {
