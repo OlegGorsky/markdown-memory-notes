@@ -24,10 +24,10 @@ public static class SyncAckMessage
             using var document = JsonDocument.Parse(json);
             var root = document.RootElement;
             if (root.ValueKind is not JsonValueKind.Object ||
-                !root.TryGetProperty("type", out var typeElement) ||
+                !SyncJsonProperties.TryGetUniqueProperty(root, "type", out var typeElement) ||
                 typeElement.ValueKind is not JsonValueKind.String ||
                 typeElement.GetString() != "ack" ||
-                !root.TryGetProperty("messageId", out var messageIdElement) ||
+                !SyncJsonProperties.TryGetUniqueProperty(root, "messageId", out var messageIdElement) ||
                 messageIdElement.ValueKind is not JsonValueKind.String)
             {
                 return false;

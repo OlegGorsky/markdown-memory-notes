@@ -20,10 +20,10 @@ public static class SyncPresenceMessage
             using var document = JsonDocument.Parse(json);
             var root = document.RootElement;
             if (root.ValueKind is not JsonValueKind.Object ||
-                !root.TryGetProperty("type", out var typeElement) ||
+                !SyncJsonProperties.TryGetUniqueProperty(root, "type", out var typeElement) ||
                 typeElement.ValueKind is not JsonValueKind.String ||
                 typeElement.GetString() != "presence" ||
-                !root.TryGetProperty("peerCount", out var peerCountElement) ||
+                !SyncJsonProperties.TryGetUniqueProperty(root, "peerCount", out var peerCountElement) ||
                 peerCountElement.ValueKind is not JsonValueKind.Number ||
                 !peerCountElement.TryGetInt32(out var parsedPeerCount) ||
                 parsedPeerCount <= 0)

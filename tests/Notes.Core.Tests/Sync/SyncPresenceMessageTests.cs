@@ -31,4 +31,13 @@ public sealed class SyncPresenceMessageTests
     {
         Assert.False(SyncPresenceMessage.TryParse(json, out _));
     }
+
+    [Theory]
+    [InlineData("""{"type":"presence","Type":"file","peerCount":3}""")]
+    [InlineData("""{"type":"presence","peerCount":1,"PeerCount":3}""")]
+    [InlineData("""{"type":"presence","peerCount":1,"peerCount":3}""")]
+    public void TryParseRejectsDuplicateProtocolProperties(string json)
+    {
+        Assert.False(SyncPresenceMessage.TryParse(json, out _));
+    }
 }

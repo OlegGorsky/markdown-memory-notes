@@ -34,4 +34,13 @@ public sealed class SyncAckMessageTests
     {
         Assert.False(SyncAckMessage.TryParse(json, out _));
     }
+
+    [Theory]
+    [InlineData("""{"type":"ack","Type":"file","messageId":"0123456789abcdef0123456789abcdef"}""")]
+    [InlineData("""{"type":"ack","messageId":"0123456789abcdef0123456789abcdef","MessageId":"fedcba9876543210fedcba9876543210"}""")]
+    [InlineData("""{"type":"ack","messageId":"0123456789abcdef0123456789abcdef","messageId":"fedcba9876543210fedcba9876543210"}""")]
+    public void TryParseRejectsDuplicateProtocolProperties(string json)
+    {
+        Assert.False(SyncAckMessage.TryParse(json, out _));
+    }
 }
