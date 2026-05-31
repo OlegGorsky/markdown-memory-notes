@@ -1,0 +1,45 @@
+@using static MemoryNotes.Web.Pages.Notes
+
+@if (Node.IsFolder)
+{
+    <div class="tree-folder" @onclick="() => Node.Expanded = !Node.Expanded">
+        <span class="tree-arrow">@(Node.Expanded ? "▼" : "▶")</span>
+        <span class="tree-name">📁 @Node.Name</span>
+    </div>
+    @if (Node.Expanded)
+    {
+        <div class="tree-children">
+            @foreach (var child in Node.Children)
+            {
+                <TreeNodeItem Node="child" OnSelect="OnSelect" OnDuplicate="OnDuplicate" OnDelete="OnDelete" />
+            }
+        </div>
+    }
+}
+else if (Node.Note is not null)
+{
+    <div class="tree-note @(_hoverNote == Node.Note ? "hover" : "")"
+         @onclick="() => OnSelect.InvokeAsync(Node.Note)"
+         @onmouseenter="() => _hoverNote = Node.Note"
+         @onmouseleave="() => _hoverNote = null">
+        <span class="tree-name">📄 @(Node.NoteTitle ?? Node.Name)</span>
+        @if (_hoverNote == Node.Note)
+        {
+            <span class="tree-actions">
+                <button class="glass-btn glass-btn-sm" title="Дублировать"
+                        @onclick="() => OnDuplicate.InvokeAsync(Node.Note)" @onclick:stopPropagation="true">📋</button>
+                <button class="glass-btn glass-btn-sm" title="Удалить"
+                        @onclick="() => OnDelete.InvokeAsync(Node.Note)" @onclick:stopPropagation="true">🗑</button>
+            </span>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public TreeNode Node { get; set; } = null!;
+    [Parameter] public EventCallback<Note> OnSelect { get; set; }
+    [Parameter] public EventCallback<Note> OnDuplicate { get; set; }
+    [Parameter] public EventCallback<Note> OnDelete { get; set; }
+
+    private Note? _hoverNote;
+}

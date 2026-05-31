@@ -9,5 +9,7 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 
 builder.Services.AddScoped<BrowserFileSystem>();
 builder.Services.AddScoped<WebVaultSession>();
+builder.Services.AddScoped<VaultManager>();
+builder.Services.AddScoped<SyncClient>();
 
 await builder.Build().RunAsync();

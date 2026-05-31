@@ -2,6 +2,8 @@
 @inject WebVaultSession Session
 @inject BrowserFileSystem FS
 @inject IJSRuntime JS
+@inject VaultManager VaultMgr
+@inject SyncClient Sync
 @implements IDisposable
 
 <PageTitle>GorseeNote</PageTitle>
@@ -20,13 +22,52 @@ else
 
         <div class="main-grid">
             <div class="note-list">
-                <h5>Заметки (@_notes.Count)</h5>
-                @foreach (var note in _notes)
+                <h5>Хранилища</h5>
+                @foreach (var vault in _vaults)
                 {
-                    <div class="note-card @(note == _selectedNote ? "selected" : "")"
-                         @onclick="() => SelectNoteAsync(note)">
-                        <div class="note-title">@note.Title</div>
-                        <div class="note-excerpt">@note.Excerpt</div>
+                    <div class="vault-item @(vault.Id == _activeVaultId ? "active" : "")"
+                         @onclick="() => SwitchVaultAsync(vault)"
+                         @onmouseenter="() => _hoverVault = vault.Id"
+                         @onmouseleave="() => _hoverVault = null">
+                        <span class="vault-icon">📁</span>
+                        <span class="vault-label">@vault.Name</span>
+                        @if (_hoverVault == vault.Id)
+                        {
+                            <span class="vault-actions">
+                                @if (vault.SyncCode is null)
+                                {
+                                    <button class="glass-btn glass-btn-sm" title="Синхронизировать"
+                                            @onclick="() => GenerateSyncCodeAsync(vault)" @onclick:stopPropagation="true">🔄</button>
+                                }
+                                else
+                                {
+                                    <span class="sync-badge @(Sync.IsConnected ? "connected" : "")"
+                                          title="Код: @vault.SyncCode">@(Sync.IsConnected ? "✓" : "⟳")</span>
+                                }
+                                <button class="glass-btn glass-btn-sm" title="Удалить хранилище"
+                                        @onclick="() => DeleteVaultAsync(vault)" @onclick:stopPropagation="true">✕</button>
+                            </span>
+                        }
+                    </div>
+                    @if (vault.Id == _activeVaultId)
+                    {
+                        <div class="note-tree">
+                            @foreach (var node in _noteTree)
+                            {
+                                <TreeNodeItem Node="node" OnSelect="SelectNoteAsync"
+                                              OnDuplicate="DuplicateNoteAsync" OnDelete="DeleteNoteAsync" />
+                            }
+                        </div>
+                    }
+                }
+                <button class="glass-btn glass-btn-sm mt-2" @onclick="AddVaultAsync"
+                        style="width:100%;justify-content:center">+ Добавить папку</button>
+                @if (_syncInputVault is not null)
+                {
+                    <div class="sync-input-row mt-2">
+                        <input @bind="_syncCodeInput" class="glass-input" placeholder="Код синхронизации" />
+                        <button class="glass-btn glass-btn-accent glass-btn-sm"
+                                @onclick="ConnectSyncAsync">Подкл.</button>
                     </div>
                 }
             </div>
@@ -85,10 +126,16 @@ else
 
 @code {
     private List<Note> _notes = new();
+    private List<VaultEntry> _vaults = new();
+    private List<TreeNode> _noteTree = new();
     private Note? _selectedNote;
     private string _editTitle = "";
     private string _editBody = "";
     private bool _previewMode;
+    private string? _activeVaultId;
+    private string? _hoverVault;
+    private VaultEntry? _syncInputVault;
+    private string _syncCodeInput = "";
     private CancellationTokenSource? _autosaveCts;
     private List<string> _quietMemory = new();
     private ElementReference _textareaRef;
@@ -96,12 +143,30 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        if (Session.IsOpen) await ReloadNotesAsync();
         _editorModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/text-editor.js");
+        _vaults = await VaultMgr.ListAsync();
+        if (Session.IsOpen && Session.CurrentVault is not null)
+        {
+            _activeVaultId = EnsureVaultEntry(Session.CurrentVault.RootPath);
+            await ReloadNotesAsync();
+        }
+    }
+
+    private string EnsureVaultEntry(string path)
+    {
+        var name = Path.GetFileName(path.TrimEnd('/', '\\'));
+        var existing = _vaults.FirstOrDefault(v => v.Path == path);
+        if (existing is not null) return existing.Id;
+        var entry = new VaultEntry("v_" + Guid.NewGuid().ToString("N")[..8], name, path, null);
+        _vaults.Add(entry);
+        _ = VaultMgr.SaveAsync(entry);
+        return entry.Id;
     }
 
     private async Task OnVaultOpened()
     {
+        _activeVaultId = EnsureVaultEntry(Session.CurrentVault!.RootPath);
+        _vaults = await VaultMgr.ListAsync();
         await ReloadNotesAsync();
         StateHasChanged();
     }
@@ -109,12 +174,153 @@ else
     private async Task ReloadNotesAsync()
     {
         _notes = (await Session.RebuildIndexAsync()).ToList();
+        _noteTree = BuildTree(_notes);
+        StateHasChanged();
+    }
+
+    private List<TreeNode> BuildTree(List<Note> notes)
+    {
+        var root = new List<TreeNode>();
+        foreach (var note in notes.OrderBy(n => n.Title))
+        {
+            var rel = GetRelativePath(note.Path);
+            var parts = rel.Split('/');
+            var current = root;
+            for (int i = 0; i < parts.Length - 1; i++)
+            {
+                var folder = current.FirstOrDefault(n => n.IsFolder && n.Name == parts[i]);
+                if (folder is null)
+                {
+                    folder = new TreeNode(parts[i], true);
+                    current.Add(folder);
+                }
+                current = folder.Children;
+            }
+            current.Add(new TreeNode(parts[^1], false) { Note = note, NoteTitle = note.Title });
+        }
+        return root;
+    }
+
+    private string GetRelativePath(string path)
+    {
+        if (Session.CurrentVault is null) return path;
+        var root = Session.CurrentVault.RootPath.TrimEnd('/', '\\') + "/";
+        var full = path.Replace('\\', '/');
+        return full.StartsWith(root) ? full[root.Length..] : full;
+    }
+
+    private async Task SwitchVaultAsync(VaultEntry vault)
+    {
+        if (vault.Id == _activeVaultId) return;
+        await AutosaveAsync();
+        _selectedNote = null;
+        _editTitle = "";
+        _editBody = "";
+        try
+        {
+            var name = Path.GetFileName(vault.Path.TrimEnd('/', '\\'));
+            await Session.OpenOrCreateAsync(name);
+            _activeVaultId = vault.Id;
+            await ReloadNotesAsync();
+        }
+        catch { }
+    }
+
+    private async Task AddVaultAsync()
+    {
+        try
+        {
+            var name = await FS.OpenVaultAsync();
+            if (name is null) return;
+            _autosaveCts?.Cancel();
+            await AutosaveAsync();
+            await Session.OpenOrCreateAsync(name);
+            _activeVaultId = EnsureVaultEntry(Session.CurrentVault!.RootPath);
+            _vaults = await VaultMgr.ListAsync();
+            await ReloadNotesAsync();
+        }
+        catch { }
+    }
+
+    private async Task DeleteVaultAsync(VaultEntry vault)
+    {
+        _vaults.Remove(vault);
+        await VaultMgr.DeleteAsync(vault.Id);
+        if (vault.Id == _activeVaultId)
+        {
+            _activeVaultId = _vaults.FirstOrDefault()?.Id;
+            _selectedNote = null;
+            if (_activeVaultId is not null)
+            {
+                var next = _vaults.First();
+                await SwitchVaultAsync(next);
+            }
+        }
+        StateHasChanged();
+    }
+
+    private async Task GenerateSyncCodeAsync(VaultEntry vault)
+    {
+        var code = Guid.NewGuid().ToString("N")[..8].ToUpper();
+        var updated = vault with { SyncCode = code };
+        var idx = _vaults.FindIndex(v => v.Id == vault.Id);
+        _vaults[idx] = updated;
+        await VaultMgr.SaveAsync(updated);
+        _syncInputVault = vault;
+        StateHasChanged();
+    }
+
+    private async Task ConnectSyncAsync()
+    {
+        if (_syncInputVault is null || string.IsNullOrWhiteSpace(_syncCodeInput)) return;
+        var code = _syncCodeInput.Trim().ToUpper();
+        _syncInputVault = _syncInputVault with { SyncCode = code };
+        var idx = _vaults.FindIndex(v => v.Id == _syncInputVault.Id);
+        _vaults[idx] = _syncInputVault;
+        await VaultMgr.SaveAsync(_syncInputVault);
+        _syncCodeInput = "";
+        _syncInputVault = null;
+
+        try
+        {
+            await Sync.ConnectAsync(new Uri("ws://localhost:5199/sync"), code,
+                async (path, content) =>
+                {
+                    await FS.WriteAllTextAsync(path, content);
+                    await InvokeAsync(ReloadNotesAsync);
+                });
+        }
+        catch { }
+        StateHasChanged();
+    }
+
+    private async Task DuplicateNoteAsync(Note note)
+    {
+        var dup = await Session.Notes.CreateAsync(Session.CurrentVault!, note.Title + " (копия)", note.Body);
+        await ReloadNotesAsync();
+        await SelectNoteAsync(dup);
+    }
+
+    private async Task DeleteNoteAsync(Note note)
+    {
+        if (_selectedNote?.Id == note.Id)
+        {
+            _selectedNote = null;
+            _editTitle = "";
+            _editBody = "";
+        }
+        _notes.Remove(note);
+        _noteTree = BuildTree(_notes);
         StateHasChanged();
     }
 
     private void OnFieldChanged()
     {
         ScheduleAutosave();
+        if (Sync.IsConnected && _selectedNote is not null)
+        {
+            _ = Sync.SendFileAsync(GetRelativePath(_selectedNote.Path), _editBody);
+        }
     }
 
     private void ScheduleAutosave()
@@ -205,5 +411,21 @@ else
     {
         _autosaveCts?.Cancel();
         _autosaveCts?.Dispose();
+    }
+
+    public sealed class TreeNode
+    {
+        public string Name { get; }
+        public bool IsFolder { get; }
+        public List<TreeNode> Children { get; } = new();
+        public Note? Note { get; set; }
+        public string? NoteTitle { get; set; }
+        public bool Expanded { get; set; } = true;
+
+        public TreeNode(string name, bool isFolder)
+        {
+            Name = name;
+            IsFolder = isFolder;
+        }
     }
 }
