@@ -21,6 +21,7 @@ public sealed class SyncClient : IAsyncDisposable
     private readonly Dictionary<string, CancellationTokenSource> inFlightTimeouts = new(StringComparer.Ordinal);
     private readonly Queue<string> pendingOrder = new();
     private readonly SemaphoreSlim flushGate = new(1, 1);
+    private readonly SemaphoreSlim receiveGate = new(1, 1);
     private IJSObjectReference? _module;
     private DotNetObjectReference<SyncClient>? _selfRef;
     private string? _room;
@@ -177,13 +178,13 @@ public sealed class SyncClient : IAsyncDisposable
                 msg.Content is not null &&
                 VaultRelativePath.TryNormalizeMarkdownContentPath(msg.Path, out var filePath))
             {
-                _ = _onFileReceived?.Invoke(filePath, msg.Content, msg.BaseHash);
+                await InvokeFileReceivedAsync(filePath, msg.Content, msg.BaseHash);
             }
             else if (msg?.Type == "delete" &&
                      msg.Path is not null &&
                      VaultRelativePath.TryNormalizeMarkdownContentPath(msg.Path, out var deletePath))
             {
-                _ = _onFileReceived?.Invoke(deletePath, null, msg.BaseHash);
+                await InvokeFileReceivedAsync(deletePath, null, msg.BaseHash);
             }
         }
         catch (JsonException) { }
@@ -227,6 +228,42 @@ public sealed class SyncClient : IAsyncDisposable
         if (baseHash is not null && !SyncContentHash.IsValid(baseHash))
         {
             throw new ArgumentException("Sync base hash is not valid.", nameof(baseHash));
+        }
+    }
+
+    private async Task InvokeFileReceivedAsync(string path, string? content, string? baseHash)
+    {
+        var handler = _onFileReceived;
+        if (handler is null || disposed)
+        {
+            return;
+        }
+
+        try
+        {
+            await receiveGate.WaitAsync();
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
+        try
+        {
+            if (!disposed)
+            {
+                await handler(path, content, baseHash);
+            }
+        }
+        finally
+        {
+            try
+            {
+                receiveGate.Release();
+            }
+            catch (ObjectDisposedException) when (disposed)
+            {
+            }
         }
     }
 
@@ -528,6 +565,7 @@ public sealed class SyncClient : IAsyncDisposable
         if (IsConnected) await DisconnectAsync();
         ClearInFlight();
         flushGate.Dispose();
+        receiveGate.Dispose();
         _selfRef?.Dispose();
         if (_module is not null) await _module.DisposeAsync();
     }

@@ -46,6 +46,62 @@ public sealed class SyncClientTests
     }
 
     [Fact]
+    public async Task OnMessageAwaitsRemoteFileHandlerBeforeCompleting()
+    {
+        await using var client = new SyncClient(new CapturingJsRuntime());
+        var handlerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var handlerMayFinish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "AbCdEfGhIjKlMnOpQrStUv", async (_, _, _) =>
+        {
+            handlerStarted.SetResult();
+            await handlerMayFinish.Task;
+        });
+
+        var messageTask = client.OnMessage("""{"type":"file","path":"notes/project.md","content":"# Project"}""");
+
+        await handlerStarted.Task.WaitAsync(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+        Assert.False(messageTask.IsCompleted);
+
+        handlerMayFinish.SetResult();
+        await messageTask;
+    }
+
+    [Fact]
+    public async Task OnMessageSerializesRemoteFileHandlers()
+    {
+        await using var client = new SyncClient(new CapturingJsRuntime());
+        var firstStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstMayFinish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "AbCdEfGhIjKlMnOpQrStUv", async (path, _, _) =>
+        {
+            if (path == "notes/first.md")
+            {
+                firstStarted.SetResult();
+                await firstMayFinish.Task;
+                return;
+            }
+
+            if (path == "notes/second.md")
+            {
+                secondStarted.SetResult();
+            }
+        });
+
+        var firstMessageTask = client.OnMessage("""{"type":"file","path":"notes/first.md","content":"# First"}""");
+        await firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+        var secondMessageTask = client.OnMessage("""{"type":"file","path":"notes/second.md","content":"# Second"}""");
+        await Task.Delay(50, TestContext.Current.CancellationToken);
+
+        Assert.False(secondStarted.Task.IsCompleted);
+
+        firstMayFinish.SetResult();
+        await firstMessageTask;
+        await secondStarted.Task.WaitAsync(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+        await secondMessageTask;
+    }
+
+    [Fact]
     public async Task ConnectAsyncRejectsWeakRoomCodesBeforeOpeningSocket()
     {
         var js = new CapturingJsRuntime();
