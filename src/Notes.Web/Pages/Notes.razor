@@ -310,7 +310,7 @@ else
     private string RenderPreview()
     {
         if (string.IsNullOrEmpty(_editBody)) return "";
-        return Markdig.Markdown.ToHtml(_editBody);
+        return MarkdownPreviewRenderer.Render(_editBody);
     }
 
     private string GetRelativePath(string path)
