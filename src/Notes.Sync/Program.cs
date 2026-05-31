@@ -10,6 +10,7 @@ var options = SyncServerOptions.FromConfiguration(builder.Configuration);
 var app = builder.Build();
 var rooms = new SyncRoomRegistry<WebSocket>(options.MaxRooms, options.MaxPeersPerRoom);
 var metrics = new SyncMetrics();
+var connections = new SyncConnectionLimiter(options.MaxConnections, options.MaxConnectionsPerClient);
 var broadcaster = new SyncBroadcaster<WebSocket>(
     rooms,
     static socket => socket.State is WebSocketState.Open,
@@ -35,6 +36,15 @@ app.Map("/sync", async (HttpContext context) =>
     {
         context.Response.StatusCode = StatusCodes.Status403Forbidden;
         await context.Response.WriteAsync("Origin not allowed", context.RequestAborted);
+        return;
+    }
+
+    using var connectionLease = connections.TryAcquire(ClientConnectionKey(context));
+    if (!connectionLease.Acquired)
+    {
+        metrics.ConnectionLimitRejected();
+        context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        await context.Response.WriteAsync("Connection limit exceeded", context.RequestAborted);
         return;
     }
 
@@ -148,7 +158,10 @@ app.MapGet("/health", () =>
         status = "ok",
         rooms = stats.Rooms,
         connections = stats.Connections,
+        activeWebSockets = connections.ActiveConnections,
         counters,
+        options.MaxConnections,
+        options.MaxConnectionsPerClient,
         options.MaxPeersPerRoom,
         options.MaxMessageBytes,
         options.MaxMessagesPerMinute,
@@ -159,7 +172,7 @@ app.MapGet("/health", () =>
 
 app.MapGet("/metrics", () =>
 {
-    return Results.Text(metrics.RenderPrometheus(rooms.Stats), "text/plain; version=0.0.4");
+    return Results.Text(metrics.RenderPrometheus(rooms.Stats, connections.ActiveConnections), "text/plain; version=0.0.4");
 });
 
 app.Run(Environment.GetEnvironmentVariable("MMN_SYNC_URL") ?? "http://0.0.0.0:5199");
@@ -218,4 +231,9 @@ static string JoinResultMessage(SyncJoinResult result)
         SyncJoinResult.InvalidRoom => "Invalid room",
         _ => "Join rejected"
     };
+}
+
+static string ClientConnectionKey(HttpContext context)
+{
+    return context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 }

@@ -14,6 +14,7 @@ public sealed class SyncMetricsTests
         metrics.MessageReceived();
         metrics.MessageRejected();
         metrics.MessageRateLimited();
+        metrics.ConnectionLimitRejected();
         metrics.DeliveryAttempted(3);
         metrics.DeliverySucceeded();
         metrics.DeliveryFailed();
@@ -24,6 +25,7 @@ public sealed class SyncMetricsTests
         Assert.Equal(2, snapshot.MessagesReceived);
         Assert.Equal(1, snapshot.MessagesRejected);
         Assert.Equal(1, snapshot.MessagesRateLimited);
+        Assert.Equal(1, snapshot.ConnectionLimitRejected);
         Assert.Equal(3, snapshot.DeliveriesAttempted);
         Assert.Equal(1, snapshot.DeliveriesSucceeded);
         Assert.Equal(1, snapshot.DeliveriesFailed);
@@ -38,11 +40,13 @@ public sealed class SyncMetricsTests
         metrics.DeliveryAttempted(2);
         metrics.DeliverySucceeded();
 
-        var text = metrics.RenderPrometheus(new SyncRoomStats(Rooms: 3, Connections: 7));
+        var text = metrics.RenderPrometheus(new SyncRoomStats(Rooms: 3, Connections: 7), activeWebSockets: 11);
 
         Assert.Contains("mmn_sync_rooms 3", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_connections 7", text, StringComparison.Ordinal);
+        Assert.Contains("mmn_sync_active_websockets 11", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_messages_received_total 1", text, StringComparison.Ordinal);
+        Assert.Contains("mmn_sync_connection_limit_rejected_total 0", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_deliveries_attempted_total 2", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_deliveries_succeeded_total 1", text, StringComparison.Ordinal);
     }

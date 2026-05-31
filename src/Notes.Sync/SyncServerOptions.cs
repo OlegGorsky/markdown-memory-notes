@@ -7,6 +7,8 @@ public sealed record SyncServerOptions(
     int MaxPeersPerRoom,
     int MaxMessageBytes,
     int MaxMessagesPerMinute,
+    int MaxConnections,
+    int MaxConnectionsPerClient,
     int MaxFanoutConcurrency,
     TimeSpan SendTimeout,
     IReadOnlyList<string> AllowedOrigins)
@@ -16,6 +18,8 @@ public sealed record SyncServerOptions(
         MaxPeersPerRoom: 32,
         MaxMessageBytes: 64 * 1024,
         MaxMessagesPerMinute: 120,
+        MaxConnections: 20_000,
+        MaxConnectionsPerClient: 256,
         MaxFanoutConcurrency: 16,
         SendTimeout: TimeSpan.FromSeconds(5),
         AllowedOrigins: []);
@@ -23,11 +27,14 @@ public sealed record SyncServerOptions(
     public static SyncServerOptions FromConfiguration(IConfiguration configuration)
     {
         var maxPeersPerRoom = GetInt(configuration, "MMN_SYNC_MAX_PEERS_PER_ROOM", "Sync:MaxPeersPerRoom", Default.MaxPeersPerRoom, 1, 512);
+        var maxConnections = GetInt(configuration, "MMN_SYNC_MAX_CONNECTIONS", "Sync:MaxConnections", Default.MaxConnections, 1, 1_000_000);
         return new SyncServerOptions(
             GetInt(configuration, "MMN_SYNC_MAX_ROOMS", "Sync:MaxRooms", Default.MaxRooms, 1, 100_000),
             maxPeersPerRoom,
             GetInt(configuration, "MMN_SYNC_MAX_MESSAGE_BYTES", "Sync:MaxMessageBytes", Default.MaxMessageBytes, 1024, 4 * 1024 * 1024),
             GetInt(configuration, "MMN_SYNC_MAX_MESSAGES_PER_MINUTE", "Sync:MaxMessagesPerMinute", Default.MaxMessagesPerMinute, 1, 10_000),
+            maxConnections,
+            GetInt(configuration, "MMN_SYNC_MAX_CONNECTIONS_PER_CLIENT", "Sync:MaxConnectionsPerClient", Default.MaxConnectionsPerClient, 1, maxConnections),
             GetInt(configuration, "MMN_SYNC_MAX_FANOUT_CONCURRENCY", "Sync:MaxFanoutConcurrency", Default.MaxFanoutConcurrency, 1, maxPeersPerRoom),
             TimeSpan.FromSeconds(GetInt(configuration, "MMN_SYNC_SEND_TIMEOUT_SECONDS", "Sync:SendTimeoutSeconds", (int)Default.SendTimeout.TotalSeconds, 1, 60)),
             GetAllowedOrigins(configuration));

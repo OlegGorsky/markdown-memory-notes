@@ -16,6 +16,8 @@ public sealed class SyncServerOptionsTests
         Assert.InRange(options.MaxMessageBytes, 1, 1024 * 1024);
         Assert.InRange(options.MaxMessagesPerMinute, 1, 1_000);
         Assert.InRange(options.MaxFanoutConcurrency, 1, options.MaxPeersPerRoom);
+        Assert.InRange(options.MaxConnections, options.MaxPeersPerRoom, 100_000);
+        Assert.InRange(options.MaxConnectionsPerClient, 1, options.MaxConnections);
         Assert.Empty(options.AllowedOrigins);
     }
 
@@ -40,6 +42,59 @@ public sealed class SyncServerOptionsTests
         finally
         {
             Environment.SetEnvironmentVariable("MMN_SYNC_ALLOWED_ORIGINS", previous);
+        }
+    }
+
+    [Fact]
+    public void FromConfigurationReadsConnectionLimits()
+    {
+        var previousMaxConnections = Environment.GetEnvironmentVariable("MMN_SYNC_MAX_CONNECTIONS");
+        var previousMaxConnectionsPerClient = Environment.GetEnvironmentVariable("MMN_SYNC_MAX_CONNECTIONS_PER_CLIENT");
+        try
+        {
+            Environment.SetEnvironmentVariable("MMN_SYNC_MAX_CONNECTIONS", null);
+            Environment.SetEnvironmentVariable("MMN_SYNC_MAX_CONNECTIONS_PER_CLIENT", null);
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Sync:MaxConnections"] = "2500",
+                    ["Sync:MaxConnectionsPerClient"] = "75"
+                })
+                .Build();
+
+            var options = SyncServerOptions.FromConfiguration(configuration);
+
+            Assert.Equal(2500, options.MaxConnections);
+            Assert.Equal(75, options.MaxConnectionsPerClient);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MMN_SYNC_MAX_CONNECTIONS", previousMaxConnections);
+            Environment.SetEnvironmentVariable("MMN_SYNC_MAX_CONNECTIONS_PER_CLIENT", previousMaxConnectionsPerClient);
+        }
+    }
+
+    [Fact]
+    public void FromConfigurationAllowsSmallConnectionLimitForConstrainedInstances()
+    {
+        var previousMaxConnections = Environment.GetEnvironmentVariable("MMN_SYNC_MAX_CONNECTIONS");
+        try
+        {
+            Environment.SetEnvironmentVariable("MMN_SYNC_MAX_CONNECTIONS", null);
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Sync:MaxConnections"] = "1"
+                })
+                .Build();
+
+            var options = SyncServerOptions.FromConfiguration(configuration);
+
+            Assert.Equal(1, options.MaxConnections);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MMN_SYNC_MAX_CONNECTIONS", previousMaxConnections);
         }
     }
 }
