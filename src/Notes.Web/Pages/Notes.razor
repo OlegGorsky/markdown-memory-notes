@@ -98,7 +98,7 @@ else
                     @if (_previewMode)
                     {
                         <div class="md-preview animate-in" @onclick="() => _previewMode = false">
-                            @((MarkupString)Markdig.Markdown.ToHtml(_editBody))
+                            @((MarkupString)RenderPreview())
                         </div>
                     }
                     else
@@ -245,6 +245,12 @@ else
             current.Add(new TreeNode(parts[^1], false) { Note = note, NoteTitle = note.Title });
         }
         return root;
+    }
+
+    private string RenderPreview()
+    {
+        if (string.IsNullOrEmpty(_editBody)) return "";
+        return Markdig.Markdown.ToHtml(_editBody);
     }
 
     private string GetRelativePath(string path)
