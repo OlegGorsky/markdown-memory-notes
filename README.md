@@ -54,9 +54,9 @@ nix develop --command dotnet run --project src/Notes.Sync/Notes.Sync.csproj
 `MMN_SYNC_MAX_CONNECTIONS` bounds active relay WebSockets per process, including clients that have not joined a room yet. `MMN_SYNC_MAX_CONNECTIONS_PER_CLIENT` bounds active WebSockets per observed remote client address; raise it when the relay sits behind a trusted reverse proxy that fans many users through one address.
 `MMN_SYNC_JOIN_TIMEOUT_SECONDS` bounds how long a new WebSocket can hold a relay slot before sending its room join payload.
 `MMN_SYNC_TRUSTED_PROXIES` and `MMN_SYNC_TRUSTED_NETWORKS` enable `X-Forwarded-For` handling only for explicitly trusted reverse proxies; leave them empty when the relay is directly internet-facing.
-`MMN_SYNC_BACKPLANE_REDIS` enables the optional Redis backplane for multi-instance relay deployments. Without it, each relay process only delivers messages to peers connected to the same process, so a load-balanced deployment needs sticky routing for each sync room. With Redis enabled, relay instances can publish sync messages across processes behind a load balancer.
+`MMN_SYNC_BACKPLANE_REDIS` enables the optional Redis backplane for multi-instance relay deployments. Without it, each relay process only delivers messages and presence to peers connected to the same process, so a load-balanced deployment needs sticky routing for each sync room. With Redis enabled, relay instances can publish sync messages and distributed presence updates across processes behind a load balancer.
 `MMN_SYNC_BACKPLANE_CHANNEL_PREFIX` isolates relay channels when several environments share Redis. `MMN_SYNC_INSTANCE_ID` should be unique per relay process; it is used to ignore messages published by the same instance.
-Connection, room, and peer limits are enforced per relay process. Presence messages currently report local process peers, not a global cross-instance count.
+Connection, room, and peer limits are enforced per relay process. With Redis enabled, presence uses expiring Redis room membership plus heartbeat renewal so crashed relay processes age out of peer counts.
 
 For a multi-instance relay deployment, add Redis backplane settings per relay process:
 
@@ -66,7 +66,7 @@ MMN_SYNC_BACKPLANE_CHANNEL_PREFIX=mmn:sync:prod \
 MMN_SYNC_INSTANCE_ID=relay-a
 ```
 
-The relay exposes `/health` and Prometheus text metrics at `/metrics`. Watch `mmn_sync_active_backplane_subscriptions`, `mmn_sync_backplane_publish_failed_total`, `mmn_sync_backplane_subscribe_failed_total`, `mmn_sync_backplane_invalid_payload_total`, and `mmn_sync_backplane_receive_failed_total` for Redis/backplane degradation. `mmn_sync_backplane_remote_subscribers_total` should move when messages are delivered across relay instances.
+The relay exposes `/health` and Prometheus text metrics at `/metrics`. Watch `mmn_sync_active_backplane_subscriptions`, `mmn_sync_backplane_publish_failed_total`, `mmn_sync_backplane_subscribe_failed_total`, `mmn_sync_backplane_invalid_payload_total`, `mmn_sync_backplane_receive_failed_total`, `mmn_sync_presence_tracker_count_failed_total`, and `mmn_sync_presence_tracker_heartbeat_failed_total` for Redis/backplane degradation. `mmn_sync_backplane_remote_subscribers_total` should move when messages are delivered across relay instances.
 
 ## Projects
 

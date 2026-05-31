@@ -18,11 +18,19 @@ var broadcaster = new SyncBroadcaster<WebSocket>(
     options.MaxFanoutConcurrency,
     metrics);
 await using var backplane = await SyncBackplaneFactory.CreateAsync(options, metrics, app.Logger);
-using var backplaneBridge = new SyncBackplaneBridge<WebSocket>(
+var backplaneBridge = new SyncBackplaneBridge<WebSocket>(
     options.InstanceId,
     rooms,
     broadcaster,
     backplane,
+    options.SendTimeout,
+    metrics,
+    app.Logger);
+using var presenceCoordinator = new SyncPresenceCoordinator<WebSocket>(
+    rooms,
+    broadcaster,
+    backplaneBridge,
+    backplane as ISyncPresenceTracker ?? NoopSyncPresenceTracker.Instance,
     options.SendTimeout,
     metrics,
     app.Logger);
@@ -109,7 +117,7 @@ async Task HandleSyncRequestAsync(HttpContext context)
         }
 
         await backplaneBridge.EnsureSubscribedAsync(room, context.RequestAborted);
-        await SyncPresenceBroadcaster.BroadcastAsync(room, rooms, broadcaster, options.SendTimeout, app.Logger);
+        await presenceCoordinator.PeerJoinedAsync(room, connectionId, context.RequestAborted);
         var rateLimit = new SyncRateLimit(options.MaxMessagesPerMinute, TimeSpan.FromMinutes(1));
 
         while (ws.State == WebSocketState.Open && !context.RequestAborted.IsCancellationRequested)
@@ -145,7 +153,7 @@ async Task HandleSyncRequestAsync(HttpContext context)
 
             if (result.Failed > 0 || result.Attempted == 0)
             {
-                await SyncPresenceBroadcaster.BroadcastAsync(room, rooms, broadcaster, options.SendTimeout, app.Logger);
+                await presenceCoordinator.BroadcastAsync(room, context.RequestAborted);
             }
         }
     }
@@ -180,7 +188,7 @@ async Task HandleSyncRequestAsync(HttpContext context)
         if (room is not null)
         {
             rooms.Leave(room, connectionId);
-            await SyncPresenceBroadcaster.BroadcastAsync(room, rooms, broadcaster, options.SendTimeout, app.Logger);
+            await presenceCoordinator.PeerLeftAsync(room, connectionId, CancellationToken.None);
             await backplaneBridge.ReleaseIfRoomEmptyAsync(room);
             if (app.Logger.IsEnabled(LogLevel.Information))
             {
@@ -208,6 +216,7 @@ app.MapGet("/health", () =>
         options.MaxMessagesPerMinute,
         options.MaxFanoutConcurrency,
         backplaneEnabled = backplane.IsEnabled,
+        distributedPresenceEnabled = presenceCoordinator.IsDistributed,
         activeBackplaneSubscriptions = backplaneBridge.SubscriptionCount,
         options.BackplaneChannelPrefix,
         options.InstanceId,

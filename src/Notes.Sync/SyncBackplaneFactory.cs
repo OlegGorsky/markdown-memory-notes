@@ -21,6 +21,7 @@ public static class SyncBackplaneFactory
         return await RedisSyncBackplane.ConnectAsync(
             options.BackplaneRedisConnectionString,
             options.BackplaneChannelPrefix,
+            options.InstanceId,
             metrics,
             logger);
     }

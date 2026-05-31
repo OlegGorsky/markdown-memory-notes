@@ -25,6 +25,10 @@ public sealed class SyncMetrics
     private long backplaneMessagesIgnored;
     private long backplaneInvalidPayload;
     private long backplaneReceiveFailed;
+    private long presenceTrackerJoinFailed;
+    private long presenceTrackerLeaveFailed;
+    private long presenceTrackerCountFailed;
+    private long presenceTrackerHeartbeatFailed;
 
     public void MessageReceived()
     {
@@ -133,6 +137,26 @@ public sealed class SyncMetrics
         Interlocked.Increment(ref backplaneReceiveFailed);
     }
 
+    public void PresenceTrackerJoinFailed()
+    {
+        Interlocked.Increment(ref presenceTrackerJoinFailed);
+    }
+
+    public void PresenceTrackerLeaveFailed()
+    {
+        Interlocked.Increment(ref presenceTrackerLeaveFailed);
+    }
+
+    public void PresenceTrackerCountFailed()
+    {
+        Interlocked.Increment(ref presenceTrackerCountFailed);
+    }
+
+    public void PresenceTrackerHeartbeatFailed()
+    {
+        Interlocked.Increment(ref presenceTrackerHeartbeatFailed);
+    }
+
     public SyncMetricSnapshot Snapshot()
     {
         return new SyncMetricSnapshot(
@@ -156,7 +180,11 @@ public sealed class SyncMetrics
             Interlocked.Read(ref backplaneMessagesReceived),
             Interlocked.Read(ref backplaneMessagesIgnored),
             Interlocked.Read(ref backplaneInvalidPayload),
-            Interlocked.Read(ref backplaneReceiveFailed));
+            Interlocked.Read(ref backplaneReceiveFailed),
+            Interlocked.Read(ref presenceTrackerJoinFailed),
+            Interlocked.Read(ref presenceTrackerLeaveFailed),
+            Interlocked.Read(ref presenceTrackerCountFailed),
+            Interlocked.Read(ref presenceTrackerHeartbeatFailed));
     }
 
     public string RenderPrometheus(
@@ -193,6 +221,10 @@ public sealed class SyncMetrics
             mmn_sync_backplane_messages_ignored_total {snapshot.BackplaneMessagesIgnored}
             mmn_sync_backplane_invalid_payload_total {snapshot.BackplaneInvalidPayload}
             mmn_sync_backplane_receive_failed_total {snapshot.BackplaneReceiveFailed}
+            mmn_sync_presence_tracker_join_failed_total {snapshot.PresenceTrackerJoinFailed}
+            mmn_sync_presence_tracker_leave_failed_total {snapshot.PresenceTrackerLeaveFailed}
+            mmn_sync_presence_tracker_count_failed_total {snapshot.PresenceTrackerCountFailed}
+            mmn_sync_presence_tracker_heartbeat_failed_total {snapshot.PresenceTrackerHeartbeatFailed}
 
             """);
     }
@@ -219,4 +251,8 @@ public sealed record SyncMetricSnapshot(
     long BackplaneMessagesReceived,
     long BackplaneMessagesIgnored,
     long BackplaneInvalidPayload,
-    long BackplaneReceiveFailed);
+    long BackplaneReceiveFailed,
+    long PresenceTrackerJoinFailed,
+    long PresenceTrackerLeaveFailed,
+    long PresenceTrackerCountFailed,
+    long PresenceTrackerHeartbeatFailed);
