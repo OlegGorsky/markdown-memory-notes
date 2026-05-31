@@ -76,6 +76,19 @@ public sealed class NoteRepositoryTests
     }
 
     [Fact]
+    public async Task ListReadsVaultRelativeFileSystemPathsUnderVaultRoot()
+    {
+        var fileSystem = new RelativePathFileSystem();
+        var repository = new NoteRepository(fileSystem);
+
+        var notes = await repository.ListAsync(new CoreVault("/vault"));
+
+        var note = Assert.Single(notes);
+        Assert.Equal(Path.GetFullPath("/vault/notes/imported.md"), note.Path);
+        Assert.Equal(Path.GetFullPath("/vault/notes/imported.md"), Assert.Single(fileSystem.ReadPaths));
+    }
+
+    [Fact]
     public async Task SavePreservesExistingIdAndUpdatesBody()
     {
         var vault = await CreateVaultAsync();
@@ -119,6 +132,58 @@ public sealed class NoteRepositoryTests
     {
         var root = Path.Combine(Path.GetTempPath(), "mmn-tests", Guid.NewGuid().ToString("N"));
         return new global::Notes.Core.Vault.VaultService(new PhysicalFileSystem()).CreateAsync(root);
+    }
+
+    private sealed class RelativePathFileSystem : IFileSystem
+    {
+        private static readonly string ExpectedReadPath = Path.GetFullPath("/vault/notes/imported.md");
+
+        public List<string> ReadPaths { get; } = new();
+
+        public Task<bool> DirectoryExistsAsync(string path)
+        {
+            return Task.FromResult(path is "/vault/notes" or "/vault/inbox");
+        }
+
+        public Task<bool> FileExistsAsync(string path)
+        {
+            return Task.FromResult(string.Equals(Path.GetFullPath(path), ExpectedReadPath, StringComparison.Ordinal));
+        }
+
+        public Task CreateDirectoryAsync(string path)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task<string> ReadAllTextAsync(string path)
+        {
+            var fullPath = Path.GetFullPath(path);
+            ReadPaths.Add(fullPath);
+            if (!string.Equals(fullPath, ExpectedReadPath, StringComparison.Ordinal))
+            {
+                throw new FileNotFoundException("Unexpected read path.", path);
+            }
+
+            return Task.FromResult("# Imported\nCaptured elsewhere");
+        }
+
+        public Task WriteAllTextAsync(string path, string contents)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task DeleteFileAsync(string path)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task<IEnumerable<string>> EnumerateFilesAsync(string path, string searchPattern, SearchOption searchOption)
+        {
+            IEnumerable<string> result = path == "/vault/notes"
+                ? ["notes/imported.md"]
+                : [];
+            return Task.FromResult(result);
+        }
     }
 
     private sealed class ConcurrentReadFileSystem : IFileSystem

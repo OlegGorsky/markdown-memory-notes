@@ -55,7 +55,8 @@ public sealed class NoteRepository
             new ParallelOptions { MaxDegreeOfParallelism = MaxConcurrentReads },
             async (index, _) =>
             {
-                notes[index] = await ReadAsync(files[index], vault.RootPath);
+                var path = PathForVaultContent(vault.RootPath, files[index]);
+                notes[index] = await ReadAsync(path, vault.RootPath);
             });
 
         return notes.OrderByDescending(static note => note.Updated).ToArray();
@@ -100,6 +101,17 @@ public sealed class NoteRepository
     private static DateTimeOffset ParseDate(string value)
     {
         return DateTimeOffset.TryParse(value, out var parsed) ? parsed : DateTimeOffset.MinValue;
+    }
+
+    private static string PathForVaultContent(string vaultRootPath, string path)
+    {
+        var normalizedPath = path.Replace('\\', '/');
+        if (!VaultRelativePath.TryNormalizeMarkdownContentPath(normalizedPath, out var relativePath))
+        {
+            return path;
+        }
+
+        return Path.Combine(vaultRootPath, relativePath.Replace('/', Path.DirectorySeparatorChar));
     }
 
     private static string FallbackIdForPath(string path, string fullPath, string? vaultRootPath)
