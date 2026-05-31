@@ -34,7 +34,8 @@ export function connect(url, room, dotNetRef, onMessageMethod, onStatusMethod, o
         onMessageMethod,
         onStatusMethod,
         options: normalizeOptions(options),
-        reconnect: true
+        reconnect: true,
+        messageQueue: Promise.resolve()
     };
 
     openSocket(connection);
@@ -71,7 +72,7 @@ function openSocket(state) {
 
     socket.onmessage = (event) => {
         if (!isCurrentSocket(state, socket)) return;
-        state.dotNetRef.invokeMethodAsync(state.onMessageMethod, event.data);
+        enqueueIncomingMessage(state, socket, event.data);
     };
 
     socket.onclose = () => {
@@ -178,6 +179,15 @@ function closeCurrentSocket() {
 
 function isCurrentSocket(state, socket) {
     return connection === state && ws === socket;
+}
+
+function enqueueIncomingMessage(state, socket, data) {
+    state.messageQueue = state.messageQueue
+        .catch(() => {})
+        .then(() => {
+            if (!isCurrentSocket(state, socket)) return;
+            return state.dotNetRef.invokeMethodAsync(state.onMessageMethod, data);
+        });
 }
 
 function notifyStatus(state, status) {

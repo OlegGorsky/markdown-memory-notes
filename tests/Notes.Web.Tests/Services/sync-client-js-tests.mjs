@@ -10,6 +10,7 @@ async function loadSyncClient() {
 
 function createHarness() {
   const timers = [];
+  const pendingInvocations = [];
 
   class FakeWebSocket {
     static CONNECTING = 0;
@@ -51,11 +52,21 @@ function createHarness() {
   const dotNetRef = {
     statuses: [],
     messages: [],
+    holdMessages: false,
+    pendingInvocations,
     invokeMethodAsync(method, arg) {
       if (method === 'OnStatus') {
         this.statuses.push(arg);
       } else if (method === 'OnMessage') {
         this.messages.push(arg);
+        if (this.holdMessages) {
+          let resolve;
+          const promise = new Promise(done => {
+            resolve = done;
+          });
+          pendingInvocations.push({ method, arg, resolve });
+          return promise;
+        }
       }
 
       return Promise.resolve();
@@ -80,6 +91,7 @@ function createHarness() {
   return {
     FakeWebSocket,
     dotNetRef,
+    pendingInvocations,
     timers,
     options,
     runNextTimer() {
@@ -174,11 +186,37 @@ async function testSendFailureStartsReconnect() {
   assert.equal(harness.FakeWebSocket.instances.length, 2);
 }
 
+async function testIncomingMessagesAreDeliveredSequentially() {
+  const syncClient = await loadSyncClient();
+  const harness = createHarness();
+  harness.dotNetRef.holdMessages = true;
+
+  syncClient.connect('ws://localhost/sync', 'AbCdEfGhIjKlMnOpQrStUv',
+    harness.dotNetRef, 'OnMessage', 'OnStatus', harness.options);
+  harness.FakeWebSocket.instances[0].open();
+
+  harness.FakeWebSocket.instances[0].onmessage({ data: 'first' });
+  harness.FakeWebSocket.instances[0].onmessage({ data: 'second' });
+  await nextTurn();
+
+  assert.deepEqual(harness.dotNetRef.messages, ['first']);
+
+  harness.pendingInvocations[0].resolve();
+  await nextTurn();
+
+  assert.deepEqual(harness.dotNetRef.messages, ['first', 'second']);
+}
+
+function nextTurn() {
+  return new Promise(resolve => setImmediate(resolve));
+}
+
 const tests = [
   testReconnectsAfterUnexpectedClose,
   testDisconnectStopsReconnects,
   testReconnectBackoffIsBounded,
-  testSendFailureStartsReconnect
+  testSendFailureStartsReconnect,
+  testIncomingMessagesAreDeliveredSequentially
 ];
 
 for (const test of tests) {
