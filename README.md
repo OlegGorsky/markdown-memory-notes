@@ -35,6 +35,18 @@ nix develop --command dotnet run --project src/Notes.Cli/Notes.Cli.csproj -- tra
 nix develop --command dotnet run --project src/Notes.Cli/Notes.Cli.csproj -- index rebuild
 ```
 
+## Run sync relay
+
+The web app can pair browsers through the WebSocket relay:
+
+```bash
+MMN_SYNC_URL=http://0.0.0.0:5199 \
+MMN_SYNC_ALLOWED_ORIGINS=https://app.example.com \
+nix develop --command dotnet run --project src/Notes.Sync/Notes.Sync.csproj
+```
+
+`MMN_SYNC_ALLOWED_ORIGINS` is optional for local development. In production, set it to a comma- or semicolon-separated list of full `http(s)://host[:port]` origins allowed to open browser WebSocket connections.
+
 ## Projects
 
 - `Notes.Core`: vault, Markdown, inbox, fragments, trails, search, quiet memory.

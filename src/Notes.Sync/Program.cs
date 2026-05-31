@@ -28,6 +28,16 @@ app.Map("/sync", async (HttpContext context) =>
         return;
     }
 
+    var origin = context.Request.Headers.TryGetValue("Origin", out var originHeader)
+        ? originHeader.ToString()
+        : null;
+    if (!SyncOriginPolicy.IsAllowed(origin, options.AllowedOrigins))
+    {
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        await context.Response.WriteAsync("Origin not allowed", context.RequestAborted);
+        return;
+    }
+
     using var ws = await context.WebSockets.AcceptWebSocketAsync();
     var connectionId = Guid.NewGuid();
     string? room = null;
@@ -142,7 +152,8 @@ app.MapGet("/health", () =>
         options.MaxPeersPerRoom,
         options.MaxMessageBytes,
         options.MaxMessagesPerMinute,
-        options.MaxFanoutConcurrency
+        options.MaxFanoutConcurrency,
+        allowedOriginsConfigured = options.AllowedOrigins.Count
     });
 });
 

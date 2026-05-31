@@ -8,7 +8,8 @@ public sealed record SyncServerOptions(
     int MaxMessageBytes,
     int MaxMessagesPerMinute,
     int MaxFanoutConcurrency,
-    TimeSpan SendTimeout)
+    TimeSpan SendTimeout,
+    IReadOnlyList<string> AllowedOrigins)
 {
     public static SyncServerOptions Default { get; } = new(
         MaxRooms: 10_000,
@@ -16,7 +17,8 @@ public sealed record SyncServerOptions(
         MaxMessageBytes: 64 * 1024,
         MaxMessagesPerMinute: 120,
         MaxFanoutConcurrency: 16,
-        SendTimeout: TimeSpan.FromSeconds(5));
+        SendTimeout: TimeSpan.FromSeconds(5),
+        AllowedOrigins: []);
 
     public static SyncServerOptions FromConfiguration(IConfiguration configuration)
     {
@@ -27,7 +29,8 @@ public sealed record SyncServerOptions(
             GetInt(configuration, "MMN_SYNC_MAX_MESSAGE_BYTES", "Sync:MaxMessageBytes", Default.MaxMessageBytes, 1024, 4 * 1024 * 1024),
             GetInt(configuration, "MMN_SYNC_MAX_MESSAGES_PER_MINUTE", "Sync:MaxMessagesPerMinute", Default.MaxMessagesPerMinute, 1, 10_000),
             GetInt(configuration, "MMN_SYNC_MAX_FANOUT_CONCURRENCY", "Sync:MaxFanoutConcurrency", Default.MaxFanoutConcurrency, 1, maxPeersPerRoom),
-            TimeSpan.FromSeconds(GetInt(configuration, "MMN_SYNC_SEND_TIMEOUT_SECONDS", "Sync:SendTimeoutSeconds", (int)Default.SendTimeout.TotalSeconds, 1, 60)));
+            TimeSpan.FromSeconds(GetInt(configuration, "MMN_SYNC_SEND_TIMEOUT_SECONDS", "Sync:SendTimeoutSeconds", (int)Default.SendTimeout.TotalSeconds, 1, 60)),
+            GetAllowedOrigins(configuration));
     }
 
     private static int GetInt(IConfiguration configuration, string environmentKey, string configKey, int fallback, int min, int max)
@@ -39,5 +42,18 @@ public sealed record SyncServerOptions(
         }
 
         return Math.Clamp(value, min, max);
+    }
+
+    private static string[] GetAllowedOrigins(IConfiguration configuration)
+    {
+        var raw = Environment.GetEnvironmentVariable("MMN_SYNC_ALLOWED_ORIGINS") ?? configuration["Sync:AllowedOrigins"];
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return [];
+        }
+
+        return raw.Split([',', ';'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .Select(origin => SyncOriginPolicy.NormalizeConfiguredOrigin(origin) ?? origin)
+            .ToArray();
     }
 }
