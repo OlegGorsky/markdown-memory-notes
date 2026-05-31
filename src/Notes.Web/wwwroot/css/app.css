@@ -142,6 +142,20 @@ p.lead { font-size: 1.05rem; color: var(--text-secondary); }
 
 .editor-textarea::placeholder { color: var(--text-muted); }
 
+/* ── Editor Toolbar ───────────────────────── */
+.editor-toolbar {
+    display: flex; gap: 2px; flex-wrap: wrap;
+    padding: 6px 16px;
+    background: var(--glass-bg);
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+}
+.editor-toolbar .glass-btn {
+    padding: 5px 10px;
+    font-size: 0.78rem;
+    min-width: 32px;
+    justify-content: center;
+}
+
 /* ── Markdown Preview ─────────────────────── */
 .md-preview {
     flex: 1;

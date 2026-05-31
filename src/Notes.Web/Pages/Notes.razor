@@ -1,6 +1,7 @@
 @page "/"
 @inject WebVaultSession Session
 @inject BrowserFileSystem FS
+@inject IJSRuntime JS
 @implements IDisposable
 
 <PageTitle>GorseeNote</PageTitle>
@@ -48,7 +49,20 @@ else
                     }
                     else
                     {
-                        <textarea @bind="_editBody" @bind:event="oninput" @bind:after="OnFieldChanged"
+                        <div class="editor-toolbar">
+                            <button class="glass-btn glass-btn-sm" title="Жирный" @onclick="() => InsertMdFormat(MdFormat.Bold)"><b>B</b></button>
+                            <button class="glass-btn glass-btn-sm" title="Курсив" @onclick="() => InsertMdFormat(MdFormat.Italic)"><i>I</i></button>
+                            <button class="glass-btn glass-btn-sm" title="Заголовок" @onclick="() => InsertMdFormat(MdFormat.Heading)">H</button>
+                            <button class="glass-btn glass-btn-sm" title="Список" @onclick="() => InsertMdFormat(MdFormat.List)">&equiv;</button>
+                            <button class="glass-btn glass-btn-sm" title="Код" @onclick="() => InsertMdFormat(MdFormat.Code)">&lt;/&gt;</button>
+                            <button class="glass-btn glass-btn-sm" title="Ссылка" @onclick="() => InsertMdFormat(MdFormat.Link)">🔗</button>
+                            <button class="glass-btn glass-btn-sm" title="Цитата" @onclick="() => InsertMdFormat(MdFormat.Quote)">❝</button>
+                            <button class="glass-btn glass-btn-sm" title="Таблица" @onclick="() => InsertMdFormat(MdFormat.Table)">⊞</button>
+                            <button class="glass-btn glass-btn-sm" title="Картинка" @onclick="() => InsertMdFormat(MdFormat.Image)">🖼</button>
+                            <button class="glass-btn glass-btn-sm" title="Разделитель" @onclick="() => InsertMdFormat(MdFormat.Divider)">—</button>
+                            <button class="glass-btn glass-btn-sm" title="Чеклист" @onclick="() => InsertMdFormat(MdFormat.Checklist)">☐</button>
+                        </div>
+                        <textarea @ref="_textareaRef" @bind="_editBody" @bind:event="oninput" @bind:after="OnFieldChanged"
                                   class="editor-textarea" rows="20"></textarea>
                     }
                 }
@@ -77,10 +91,13 @@ else
     private bool _previewMode;
     private CancellationTokenSource? _autosaveCts;
     private List<string> _quietMemory = new();
+    private ElementReference _textareaRef;
+    private IJSObjectReference? _editorModule;
 
     protected override async Task OnInitializedAsync()
     {
         if (Session.IsOpen) await ReloadNotesAsync();
+        _editorModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/text-editor.js");
     }
 
     private async Task OnVaultOpened()
@@ -152,6 +169,36 @@ else
             .Suggest(new MemoryQuery(note, note.Body, 5))
             .Select(c => c.Note.Title)
             .ToList();
+    }
+
+    private enum MdFormat { Bold, Italic, Heading, List, Code, Link, Quote, Table, Image, Divider, Checklist }
+
+    private async Task InsertMdFormat(MdFormat fmt)
+    {
+        var (before, after, placeholder) = fmt switch
+        {
+            MdFormat.Bold => ("**", "**", "текст"),
+            MdFormat.Italic => ("*", "*", "текст"),
+            MdFormat.Heading => ("## ", "", "Заголовок"),
+            MdFormat.List => ("- ", "", "элемент"),
+            MdFormat.Code => ("```\n", "\n```", "код"),
+            MdFormat.Link => ("[", "](url)", "текст"),
+            MdFormat.Quote => ("> ", "", "цитата"),
+            MdFormat.Table => ("| Заголовок | Заголовок |\n|---|---|\n| ", " |", "ячейка"),
+            MdFormat.Image => ("![", "](url)", "описание"),
+            MdFormat.Divider => ("\n---\n", "", ""),
+            MdFormat.Checklist => ("- [ ] ", "", "задача"),
+            _ => ("", "", "")
+        };
+        await InsertFormattingAsync(before, after, placeholder);
+    }
+
+    private async Task InsertFormattingAsync(string before, string after, string placeholder)
+    {
+        if (_editorModule is not null)
+        {
+            await _editorModule.InvokeVoidAsync("insertFormatting", _textareaRef, before, after, placeholder);
+        }
     }
 
     public void Dispose()
