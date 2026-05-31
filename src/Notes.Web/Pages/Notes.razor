@@ -503,7 +503,7 @@ else
             _editBody = "";
         }
 
-        await ReloadNotesAsync();
+        RemoveLoadedNote(note.Id);
     }
 
     private void OnFieldChanged()
@@ -538,7 +538,42 @@ else
             var content = await FS.ReadAllTextAsync(_selectedNote.Path);
             await TrySendSyncChangeAsync(() => Sync.SendFileAsync(relativePath, content, baseHash));
         }
-        await ReloadNotesAsync();
+        UpsertLoadedNote(_selectedNote);
+    }
+
+    private void UpsertLoadedNote(Note note)
+    {
+        var index = _notes.FindIndex(existing => existing.Id == note.Id);
+        if (index >= 0)
+        {
+            _notes[index] = note;
+        }
+        else
+        {
+            _notes.Add(note);
+        }
+
+        Session.UpsertIndexedNote(note);
+        _noteTree = BuildTree(_notes);
+        RefreshQuietMemory(note);
+        StateHasChanged();
+    }
+
+    private void RemoveLoadedNote(string noteId)
+    {
+        RemoveLoadedNoteCore(noteId);
+        StateHasChanged();
+    }
+
+    private void RemoveLoadedNoteCore(string noteId)
+    {
+        _notes.RemoveAll(note => note.Id == noteId);
+        Session.RemoveIndexedNote(noteId);
+        _noteTree = BuildTree(_notes);
+        if (_selectedNote is null)
+        {
+            _quietMemory.Clear();
+        }
     }
 
     private async Task TrySendSyncChangeAsync(Func<Task> sendAsync)

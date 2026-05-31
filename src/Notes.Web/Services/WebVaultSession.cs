@@ -54,6 +54,16 @@ public sealed class WebVaultSession
         return notes;
     }
 
+    public void UpsertIndexedNote(Note note)
+    {
+        searchIndex.Upsert(note);
+    }
+
+    public void RemoveIndexedNote(string noteId)
+    {
+        searchIndex.Remove(noteId);
+    }
+
     public IReadOnlyList<SearchResult> Search(string query, int limit = 20)
     {
         return searchIndex.Search(query, limit);

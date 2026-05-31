@@ -13,6 +13,23 @@ public sealed partial class InMemorySearchIndex : ISearchIndex
         notes.AddRange(notesToIndex);
     }
 
+    public void Upsert(Note note)
+    {
+        var index = notes.FindIndex(existing => existing.Id == note.Id);
+        if (index >= 0)
+        {
+            notes[index] = note;
+            return;
+        }
+
+        notes.Add(note);
+    }
+
+    public void Remove(string noteId)
+    {
+        notes.RemoveAll(note => note.Id == noteId);
+    }
+
     public IReadOnlyList<SearchResult> Search(string query, int limit)
     {
         var terms = Tokenize(query).ToArray();
