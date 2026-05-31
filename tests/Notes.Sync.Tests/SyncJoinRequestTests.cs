@@ -25,4 +25,13 @@ public sealed class SyncJoinRequestTests
     {
         Assert.False(SyncJoinRequest.TryGetRoom(json, out _));
     }
+
+    [Theory]
+    [InlineData("""{"room":"AbCdEfGhIjKlMnOpQrStUv","Room":"legacy-PascalCase-1234"}""")]
+    [InlineData("""{"Room":"legacy-PascalCase-1234","room":"AbCdEfGhIjKlMnOpQrStUv"}""")]
+    [InlineData("""{"room":"AbCdEfGhIjKlMnOpQrStUv","room":"legacy-PascalCase-1234"}""")]
+    public void TryGetRoomRejectsDuplicateRoomProperties(string json)
+    {
+        Assert.False(SyncJoinRequest.TryGetRoom(json, out _));
+    }
 }

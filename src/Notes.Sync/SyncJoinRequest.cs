@@ -5,16 +5,21 @@ namespace Notes.Sync;
 
 public static class SyncJoinRequest
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-
     public static bool TryGetRoom(string json, [NotNullWhen(true)] out string? room)
     {
         room = null;
         try
         {
-            var join = JsonSerializer.Deserialize<JoinMessage>(json, JsonOptions);
-            if (join?.Room is not { } requestedRoom ||
-                !SyncRoomCode.IsValid(requestedRoom))
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind is not JsonValueKind.Object ||
+                !TryGetSingleProperty(document.RootElement, "room", out var roomElement) ||
+                roomElement.ValueKind is not JsonValueKind.String)
+            {
+                return false;
+            }
+
+            var requestedRoom = roomElement.GetString() ?? string.Empty;
+            if (!SyncRoomCode.IsValid(requestedRoom))
             {
                 return false;
             }
@@ -28,7 +33,26 @@ public static class SyncJoinRequest
         }
     }
 
-#pragma warning disable CA1812 // Instantiated via JSON deserialization
-    private sealed record JoinMessage(string Room);
-#pragma warning restore CA1812
+    private static bool TryGetSingleProperty(JsonElement element, string name, out JsonElement property)
+    {
+        var found = false;
+        property = default;
+        foreach (var candidate in element.EnumerateObject())
+        {
+            if (candidate.NameEquals(name) ||
+                string.Equals(candidate.Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                if (found)
+                {
+                    property = default;
+                    return false;
+                }
+
+                property = candidate.Value;
+                found = true;
+            }
+        }
+
+        return found;
+    }
 }
