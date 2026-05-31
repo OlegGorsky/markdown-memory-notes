@@ -6,6 +6,7 @@ namespace Notes.Core.Notes;
 
 public sealed class NoteRepository
 {
+    private const int MaxConcurrentReads = 8;
     private readonly IFileSystem fileSystem;
 
     public NoteRepository(IFileSystem fileSystem)
@@ -45,11 +46,15 @@ public sealed class NoteRepository
             files.AddRange(await fileSystem.EnumerateFilesAsync(vault.InboxPath, "*.md", SearchOption.AllDirectories));
         }
 
-        var notes = new List<Note>();
-        foreach (var file in files)
-        {
-            notes.Add(await ReadAsync(file));
-        }
+        var notes = new Note[files.Count];
+        await Parallel.ForAsync(
+            0,
+            files.Count,
+            new ParallelOptions { MaxDegreeOfParallelism = MaxConcurrentReads },
+            async (index, _) =>
+            {
+                notes[index] = await ReadAsync(files[index]);
+            });
 
         return notes.OrderByDescending(static note => note.Updated).ToArray();
     }
