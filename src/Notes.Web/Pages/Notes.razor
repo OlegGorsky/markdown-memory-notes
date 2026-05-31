@@ -367,7 +367,7 @@ else
     private async Task ConnectNewVaultAsync()
     {
         if (string.IsNullOrWhiteSpace(_syncCodeInput)) return;
-        var code = _syncCodeInput.Trim().ToUpper();
+        var code = _syncCodeInput.Trim();
         _syncCodeInput = "";
         _connectNewModal = false;
 
@@ -412,7 +412,7 @@ else
     {
         var vault = _vaults.FirstOrDefault(v => v.Id == _syncModalVault);
         if (vault is null) return;
-        var code = Guid.NewGuid().ToString("N")[..8].ToUpper();
+        var code = global::Notes.Core.Sync.SyncPairingCode.Generate();
         var updated = vault with { SyncCode = code };
         var idx = _vaults.FindIndex(v => v.Id == vault.Id);
         _vaults[idx] = updated;
@@ -436,7 +436,7 @@ else
     private async Task ConnectSyncAsync()
     {
         if (string.IsNullOrWhiteSpace(_syncCodeInput)) return;
-        var code = _syncCodeInput.Trim().ToUpper();
+        var code = _syncCodeInput.Trim();
         var vault = _vaults.FirstOrDefault(v => v.Id == _syncModalVault);
         if (vault is null) return;
         var updated = vault with { SyncCode = code };

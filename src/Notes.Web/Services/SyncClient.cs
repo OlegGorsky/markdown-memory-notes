@@ -1,10 +1,13 @@
 using Microsoft.JSInterop;
+using Notes.Core.Files;
 using System.Text.Json;
 
 namespace MemoryNotes.Web.Services;
 
 public sealed class SyncClient : IAsyncDisposable
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
     private readonly IJSRuntime js;
     private IJSObjectReference? _module;
     private DotNetObjectReference<SyncClient>? _selfRef;
@@ -40,7 +43,12 @@ public sealed class SyncClient : IAsyncDisposable
     public async Task SendFileAsync(string relativePath, string content)
     {
         if (!IsConnected) return;
-        var msg = JsonSerializer.Serialize(new SyncMessage("file", relativePath, content));
+        if (!VaultRelativePath.TryNormalizeMarkdownContentPath(relativePath, out var normalizedPath))
+        {
+            throw new ArgumentException("Sync path is outside supported Markdown content.", nameof(relativePath));
+        }
+
+        var msg = JsonSerializer.Serialize(new SyncMessage("file", normalizedPath, content), JsonOptions);
         var mod = await ModuleAsync();
         await mod.InvokeVoidAsync("send", msg);
     }
@@ -48,7 +56,12 @@ public sealed class SyncClient : IAsyncDisposable
     public async Task SendDeleteAsync(string relativePath)
     {
         if (!IsConnected) return;
-        var msg = JsonSerializer.Serialize(new SyncMessage("delete", relativePath, null));
+        if (!VaultRelativePath.TryNormalizeMarkdownContentPath(relativePath, out var normalizedPath))
+        {
+            throw new ArgumentException("Sync path is outside supported Markdown content.", nameof(relativePath));
+        }
+
+        var msg = JsonSerializer.Serialize(new SyncMessage("delete", normalizedPath, null), JsonOptions);
         var mod = await ModuleAsync();
         await mod.InvokeVoidAsync("send", msg);
     }
@@ -66,14 +79,19 @@ public sealed class SyncClient : IAsyncDisposable
     {
         try
         {
-            var msg = JsonSerializer.Deserialize<SyncMessage>(data);
-            if (msg?.Type == "file" && msg.Path is not null && msg.Content is not null)
+            var msg = JsonSerializer.Deserialize<SyncMessage>(data, JsonOptions);
+            if (msg?.Type == "file" &&
+                msg.Path is not null &&
+                msg.Content is not null &&
+                VaultRelativePath.TryNormalizeMarkdownContentPath(msg.Path, out var filePath))
             {
-                _ = _onFileReceived?.Invoke(msg.Path, msg.Content);
+                _ = _onFileReceived?.Invoke(filePath, msg.Content);
             }
-            else if (msg?.Type == "delete" && msg.Path is not null)
+            else if (msg?.Type == "delete" &&
+                     msg.Path is not null &&
+                     VaultRelativePath.TryNormalizeMarkdownContentPath(msg.Path, out var deletePath))
             {
-                _ = _onFileReceived?.Invoke(msg.Path, null);
+                _ = _onFileReceived?.Invoke(deletePath, null);
             }
         }
         catch (JsonException) { }

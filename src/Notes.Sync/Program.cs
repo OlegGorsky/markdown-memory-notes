@@ -32,9 +32,7 @@ app.Map("/sync", async (HttpContext context) =>
             return;
         }
 
-        var join = JsonSerializer.Deserialize<JoinMessage>(joinPayload);
-        var requestedRoom = join?.Room;
-        if (!SyncRoomCode.IsValid(requestedRoom) || requestedRoom is null)
+        if (!SyncJoinRequest.TryGetRoom(joinPayload, out var requestedRoom))
         {
             await CloseSafeAsync(ws, WebSocketCloseStatus.PolicyViolation, "Invalid room", context.RequestAborted);
             return;
@@ -65,6 +63,12 @@ app.Map("/sync", async (HttpContext context) =>
             if (!rateLimit.TryConsume())
             {
                 await CloseSafeAsync(ws, WebSocketCloseStatus.PolicyViolation, "Rate limit exceeded", context.RequestAborted);
+                break;
+            }
+
+            if (!SyncRelayMessage.IsValid(message, options.MaxMessageBytes))
+            {
+                await CloseSafeAsync(ws, WebSocketCloseStatus.InvalidPayloadData, "Invalid sync message", context.RequestAborted);
                 break;
             }
 
@@ -211,5 +215,3 @@ static string JoinResultMessage(SyncJoinResult result)
         _ => "Join rejected"
     };
 }
-
-sealed record JoinMessage(string Room);
