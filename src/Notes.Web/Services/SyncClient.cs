@@ -26,6 +26,7 @@ public sealed class SyncClient : IAsyncDisposable
     private DotNetObjectReference<SyncClient>? _selfRef;
     private string? _room;
     private Func<string, string?, string?, Task>? _onFileReceived;
+    private bool hasActiveSocket;
     private bool disposed;
 
     public bool IsConnected { get; private set; }
@@ -90,6 +91,7 @@ public sealed class SyncClient : IAsyncDisposable
         var mod = await ModuleAsync();
         await mod.InvokeVoidAsync("connect", serverUrl.ToString(), room,
             _selfRef, nameof(OnMessage), _selfRef, nameof(OnStatus));
+        hasActiveSocket = true;
     }
 
     public async Task SendFileAsync(string relativePath, string content)
@@ -127,12 +129,7 @@ public sealed class SyncClient : IAsyncDisposable
     public async Task DisconnectAsync()
     {
         var mod = await ModuleAsync();
-        await mod.InvokeVoidAsync("disconnect");
-        IsConnected = false;
-        PeerCount = 0;
-        ClearInFlight();
-        Status = null;
-        StateChanged?.Invoke(this, EventArgs.Empty);
+        await DisconnectCoreAsync(mod);
     }
 
     [JSInvokable]
@@ -211,6 +208,17 @@ public sealed class SyncClient : IAsyncDisposable
     private async Task<IJSObjectReference> ModuleAsync()
     {
         return _module ??= await js.InvokeAsync<IJSObjectReference>("import", "./js/sync-client.js");
+    }
+
+    private async Task DisconnectCoreAsync(IJSObjectReference mod)
+    {
+        await mod.InvokeVoidAsync("disconnect");
+        hasActiveSocket = false;
+        IsConnected = false;
+        PeerCount = 0;
+        ClearInFlight();
+        Status = null;
+        StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private static void ValidateRoom(string room)
@@ -562,7 +570,7 @@ public sealed class SyncClient : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         disposed = true;
-        if (IsConnected) await DisconnectAsync();
+        if (hasActiveSocket && _module is not null) await DisconnectCoreAsync(_module);
         ClearInFlight();
         flushGate.Dispose();
         receiveGate.Dispose();

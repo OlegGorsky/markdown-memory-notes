@@ -423,6 +423,33 @@ public sealed class SyncClientTests
         Assert.Equal(0, client.PeerCount);
     }
 
+    [Fact]
+    public async Task DisposeAsyncDisconnectsSocketAfterConnectBeforeConnectedStatus()
+    {
+        var js = new CapturingJsRuntime();
+        await using (var client = new SyncClient(js))
+        {
+            await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "AbCdEfGhIjKlMnOpQrStUv", (_, _) => Task.CompletedTask);
+        }
+
+        Assert.Equal(1, js.Module.ConnectCalls);
+        Assert.Equal(1, js.Module.DisconnectCalls);
+    }
+
+    [Fact]
+    public async Task DisposeAsyncDoesNotDisconnectAgainAfterExplicitDisconnect()
+    {
+        var js = new CapturingJsRuntime();
+        await using (var client = new SyncClient(js))
+        {
+            await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "AbCdEfGhIjKlMnOpQrStUv", (_, _) => Task.CompletedTask);
+            await client.DisconnectAsync();
+        }
+
+        Assert.Equal(1, js.Module.ConnectCalls);
+        Assert.Equal(1, js.Module.DisconnectCalls);
+    }
+
     private sealed class CapturingJsRuntime : IJSRuntime
     {
         public CapturingJsObjectReference Module { get; } = new();
@@ -451,6 +478,7 @@ public sealed class SyncClientTests
         public List<string> SentMessages { get; } = new();
         public List<object?> ConnectCallbackReferences { get; } = new();
         public int ConnectCalls { get; private set; }
+        public int DisconnectCalls { get; private set; }
         public bool SendReportsOpen { get; set; } = true;
 
         public ValueTask DisposeAsync()
@@ -485,6 +513,10 @@ public sealed class SyncClientTests
                         Assert.Same(onMessageReference, onStatusReference);
                         ConnectCallbackReferences.Add(onMessageReference);
                     }
+                }
+                else
+                {
+                    DisconnectCalls++;
                 }
 
                 return new ValueTask<TValue>(default(TValue)!);
