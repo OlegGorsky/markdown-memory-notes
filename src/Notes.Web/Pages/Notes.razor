@@ -16,12 +16,21 @@ else
 {
     <div class="app-shell">
         <div class="toolbar">
+            <button class="glass-btn glass-btn-sm hamburger-btn" @onclick="() => _sidebarOpen = !_sidebarOpen">
+                <LucideIcon Name="list" />
+            </button>
             <span class="vault-name">@Session.CurrentVault!.RootPath</span>
             <button class="glass-btn glass-btn-accent glass-btn-sm" @onclick="NewNoteAsync"><LucideIcon Name="plus" /> Новая</button>
         </div>
 
         <div class="main-grid">
-            <div class="note-list">
+            <div class="note-list @(_sidebarOpen ? "open" : "")">
+                @if (_sidebarOpen)
+                {
+                    <button class="glass-btn glass-btn-sm sidebar-close" @onclick="() => _sidebarOpen = false">
+                        <LucideIcon Name="x" />
+                    </button>
+                }
                 <h5>Хранилища</h5>
                 @foreach (var vault in _vaults)
                 {
@@ -62,8 +71,21 @@ else
                         </div>
                     }
                 }
-                <button class="glass-btn glass-btn-sm mt-2" @onclick="AddVaultAsync"
+                <button class="glass-btn glass-btn-sm mt-2" @onclick="() => _addMenuOpen = !_addMenuOpen"
                         style="width:100%;justify-content:center"><LucideIcon Name="plus" /> Добавить папку</button>
+                @if (_addMenuOpen)
+                {
+                    <div class="add-menu animate-in">
+                        <button class="toolbar-menu-item" @onclick="AddLocalVaultAsync">
+                            <LucideIcon Name="folder" />
+                            <span>Выбрать локальную</span>
+                        </button>
+                        <button class="toolbar-menu-item" @onclick="() => { _addMenuOpen = false; _syncModalVault = null; _connectNewModal = true; }">
+                            <LucideIcon Name="refresh-cw" />
+                            <span>Подключить по коду</span>
+                        </button>
+                    </div>
+                }
             </div>
 
             <div class="editor">
@@ -123,6 +145,11 @@ else
         </div>
     </div>
 
+    @if (_sidebarOpen)
+    {
+        <div class="sidebar-overlay" @onclick="() => _sidebarOpen = false"></div>
+    }
+
     @if (_syncModalVault is not null)
     {
         var vault = _vaults.FirstOrDefault(v => v.Id == _syncModalVault);
@@ -167,6 +194,26 @@ else
             </div>
         </div>
     }
+
+    @if (_connectNewModal)
+    {
+        <div class="modal-overlay" @onclick="() => _connectNewModal = false">
+            <div class="modal-content glass animate-in" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h4>Подключить папку</h4>
+                    <button class="glass-btn glass-btn-sm" @onclick="() => _connectNewModal = false"><LucideIcon Name="x" /></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted">Введите код синхронизации с другого устройства:</p>
+                    <div class="input-group">
+                        <input @bind="_syncCodeInput" class="glass-input" placeholder="Код синхронизации" />
+                        <button class="glass-btn glass-btn-accent"
+                                @onclick="ConnectNewVaultAsync">Подключить</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
 }
 
 @code {
@@ -178,6 +225,9 @@ else
     private string _editBody = "";
     private bool _previewMode;
     private bool _toolbarOpen;
+    private bool _sidebarOpen;
+    private bool _addMenuOpen;
+    private bool _connectNewModal;
     private string? _syncModalVault;
     private string? _activeVaultId;
     private string? _hoverVault;
@@ -278,8 +328,9 @@ else
         catch { }
     }
 
-    private async Task AddVaultAsync()
+    private async Task AddLocalVaultAsync()
     {
+        _addMenuOpen = false;
         try
         {
             var name = await FS.OpenVaultAsync();
@@ -292,6 +343,36 @@ else
             await ReloadNotesAsync();
         }
         catch { }
+    }
+
+    private async Task ConnectNewVaultAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_syncCodeInput)) return;
+        var code = _syncCodeInput.Trim().ToUpper();
+        _syncCodeInput = "";
+        _connectNewModal = false;
+
+        try
+        {
+            var name = await FS.OpenVaultAsync();
+            if (name is null) return;
+            await Session.OpenOrCreateAsync(name);
+            var vault = new VaultEntry("v_" + Guid.NewGuid().ToString("N")[..8],
+                Path.GetFileName(name.TrimEnd('/', '\\')), Session.CurrentVault!.RootPath, code);
+            await VaultMgr.SaveAsync(vault);
+            _vaults = await VaultMgr.ListAsync();
+            _activeVaultId = vault.Id;
+            await ReloadNotesAsync();
+
+            await Sync.ConnectAsync(new Uri("ws://localhost:5199/sync"), code,
+                async (path, content) =>
+                {
+                    await FS.WriteAllTextAsync(path, content);
+                    await InvokeAsync(ReloadNotesAsync);
+                });
+        }
+        catch { }
+        StateHasChanged();
     }
 
     private async Task DeleteVaultAsync(VaultEntry vault)

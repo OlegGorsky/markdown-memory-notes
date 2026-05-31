@@ -503,9 +503,31 @@ p.lead { font-size: 1.05rem; color: var(--text-secondary); }
 /* ═══════════════════════════════════════════
    Responsive
    ═══════════════════════════════════════════ */
+.hamburger-btn { display: none; }
+.sidebar-close { display: none; }
+.sidebar-overlay { display: none; }
+
 @media (max-width: 768px) {
     .main-grid { grid-template-columns: 1fr; }
-    .note-list, .side-panel { display: none; }
+    .hamburger-btn { display: flex; }
+    .sidebar-close { display: flex; position: absolute; top: 8px; right: 8px; z-index: 101; }
+    .note-list {
+        position: fixed; top: 0; left: 0; bottom: 0; z-index: 100;
+        width: 280px; max-width: 85vw;
+        transform: translateX(-100%);
+        transition: transform 0.25s ease;
+        padding-top: 40px;
+        overflow-y: auto;
+    }
+    .note-list.open { transform: translateX(0); }
+    .sidebar-overlay {
+        display: block;
+        position: fixed; inset: 0; z-index: 99;
+        background: rgba(0,0,0,0.5);
+        backdrop-filter: blur(4px);
+    }
+    .side-panel { display: none; }
     .page-content { padding: 0 16px; margin: 28px auto; }
     .vault-open h1 { font-size: 1.7rem; }
+    .modal-content { width: 95vw; }
 }
