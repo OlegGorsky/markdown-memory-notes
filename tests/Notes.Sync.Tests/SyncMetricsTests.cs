@@ -21,6 +21,16 @@ public sealed class SyncMetricsTests
         metrics.DeliverySucceeded();
         metrics.DeliveryFailed();
         metrics.PeerRemoved();
+        metrics.BackplanePublishAttempted();
+        metrics.BackplanePublishSucceeded(remoteSubscribers: 2);
+        metrics.BackplanePublishFailed();
+        metrics.BackplaneSubscribeAttempted();
+        metrics.BackplaneSubscribeSucceeded();
+        metrics.BackplaneSubscribeFailed();
+        metrics.BackplaneMessageReceived();
+        metrics.BackplaneMessageIgnored();
+        metrics.BackplaneInvalidPayload();
+        metrics.BackplaneReceiveFailed();
 
         var snapshot = metrics.Snapshot();
 
@@ -34,6 +44,17 @@ public sealed class SyncMetricsTests
         Assert.Equal(1, snapshot.DeliveriesSucceeded);
         Assert.Equal(1, snapshot.DeliveriesFailed);
         Assert.Equal(1, snapshot.PeersRemoved);
+        Assert.Equal(1, snapshot.BackplanePublishAttempted);
+        Assert.Equal(1, snapshot.BackplanePublishSucceeded);
+        Assert.Equal(1, snapshot.BackplanePublishFailed);
+        Assert.Equal(2, snapshot.BackplaneRemoteSubscribers);
+        Assert.Equal(1, snapshot.BackplaneSubscribeAttempted);
+        Assert.Equal(1, snapshot.BackplaneSubscribeSucceeded);
+        Assert.Equal(1, snapshot.BackplaneSubscribeFailed);
+        Assert.Equal(1, snapshot.BackplaneMessagesReceived);
+        Assert.Equal(1, snapshot.BackplaneMessagesIgnored);
+        Assert.Equal(1, snapshot.BackplaneInvalidPayload);
+        Assert.Equal(1, snapshot.BackplaneReceiveFailed);
     }
 
     [Fact]
@@ -43,17 +64,29 @@ public sealed class SyncMetricsTests
         metrics.MessageReceived();
         metrics.DeliveryAttempted(2);
         metrics.DeliverySucceeded();
+        metrics.BackplanePublishAttempted();
+        metrics.BackplanePublishSucceeded(remoteSubscribers: 3);
+        metrics.BackplaneSubscribeSucceeded();
 
-        var text = metrics.RenderPrometheus(new SyncRoomStats(Rooms: 3, Connections: 7), activeWebSockets: 11);
+        var text = metrics.RenderPrometheus(
+            new SyncRoomStats(Rooms: 3, Connections: 7),
+            activeWebSockets: 11,
+            activeBackplaneSubscriptions: 5);
 
         Assert.Contains("mmn_sync_rooms 3", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_connections 7", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_active_websockets 11", text, StringComparison.Ordinal);
+        Assert.Contains("mmn_sync_active_backplane_subscriptions 5", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_messages_received_total 1", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_connection_limit_rejected_total 0", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_join_timed_out_total 0", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_join_rejected_total 0", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_deliveries_attempted_total 2", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_deliveries_succeeded_total 1", text, StringComparison.Ordinal);
+        Assert.Contains("mmn_sync_backplane_publish_attempted_total 1", text, StringComparison.Ordinal);
+        Assert.Contains("mmn_sync_backplane_publish_succeeded_total 1", text, StringComparison.Ordinal);
+        Assert.Contains("mmn_sync_backplane_publish_failed_total 0", text, StringComparison.Ordinal);
+        Assert.Contains("mmn_sync_backplane_remote_subscribers_total 3", text, StringComparison.Ordinal);
+        Assert.Contains("mmn_sync_backplane_subscribe_succeeded_total 1", text, StringComparison.Ordinal);
     }
 }

@@ -14,7 +14,8 @@ public sealed class SyncBackplaneBridgeTests
         var registry = new SyncRoomRegistry<TestPeer>(maxRooms: 1, maxPeersPerRoom: 4);
         var peer = new TestPeer();
         registry.TryJoin(Room, Guid.NewGuid(), peer);
-        using var bridge = CreateBridge("instance-a", registry);
+        var metrics = new SyncMetrics();
+        using var bridge = CreateBridge("instance-a", registry, metrics: metrics);
 
         await bridge.ReceiveAsync(
             Room,
@@ -22,6 +23,7 @@ public sealed class SyncBackplaneBridgeTests
             CancellationToken.None);
 
         Assert.Equal(["payload"], peer.Messages);
+        Assert.Equal(1, metrics.Snapshot().BackplaneMessagesReceived);
     }
 
     [Fact]
@@ -30,7 +32,8 @@ public sealed class SyncBackplaneBridgeTests
         var registry = new SyncRoomRegistry<TestPeer>(maxRooms: 1, maxPeersPerRoom: 4);
         var peer = new TestPeer();
         registry.TryJoin(Room, Guid.NewGuid(), peer);
-        using var bridge = CreateBridge("instance-a", registry);
+        var metrics = new SyncMetrics();
+        using var bridge = CreateBridge("instance-a", registry, metrics: metrics);
 
         await bridge.ReceiveAsync(
             Room,
@@ -38,6 +41,7 @@ public sealed class SyncBackplaneBridgeTests
             CancellationToken.None);
 
         Assert.Empty(peer.Messages);
+        Assert.Equal(1, metrics.Snapshot().BackplaneMessagesIgnored);
     }
 
     [Fact]
@@ -45,12 +49,18 @@ public sealed class SyncBackplaneBridgeTests
     {
         var registry = new SyncRoomRegistry<TestPeer>(maxRooms: 1, maxPeersPerRoom: 4);
         await using var backplane = new FakeSyncBackplane();
-        using var bridge = CreateBridge("instance-a", registry, backplane);
+        var metrics = new SyncMetrics();
+        using var bridge = CreateBridge("instance-a", registry, backplane, metrics);
         var senderId = Guid.NewGuid();
 
         var result = await bridge.PublishAsync(Room, senderId, "payload", CancellationToken.None);
 
         Assert.True(result.Published);
+        var snapshot = metrics.Snapshot();
+        Assert.Equal(1, snapshot.BackplanePublishAttempted);
+        Assert.Equal(1, snapshot.BackplanePublishSucceeded);
+        Assert.Equal(0, snapshot.BackplanePublishFailed);
+        Assert.Equal(1, snapshot.BackplaneRemoteSubscribers);
         var published = Assert.Single(backplane.Published);
         Assert.Equal(Room, published.Room);
         Assert.Equal("instance-a", published.Message.OriginInstanceId);
@@ -63,12 +73,17 @@ public sealed class SyncBackplaneBridgeTests
     {
         var registry = new SyncRoomRegistry<TestPeer>(maxRooms: 1, maxPeersPerRoom: 4);
         await using var backplane = new ThrowingSyncBackplane();
-        using var bridge = CreateBridge("instance-a", registry, backplane);
+        var metrics = new SyncMetrics();
+        using var bridge = CreateBridge("instance-a", registry, backplane, metrics);
 
         var result = await bridge.PublishAsync(Room, Guid.NewGuid(), "payload", CancellationToken.None);
 
         Assert.False(result.Published);
         Assert.Equal(0, result.RemoteSubscribers);
+        var snapshot = metrics.Snapshot();
+        Assert.Equal(1, snapshot.BackplanePublishAttempted);
+        Assert.Equal(0, snapshot.BackplanePublishSucceeded);
+        Assert.Equal(1, snapshot.BackplanePublishFailed);
     }
 
     [Fact]
@@ -76,9 +91,16 @@ public sealed class SyncBackplaneBridgeTests
     {
         var registry = new SyncRoomRegistry<TestPeer>(maxRooms: 1, maxPeersPerRoom: 4);
         await using var backplane = new ThrowingSyncBackplane();
-        using var bridge = CreateBridge("instance-a", registry, backplane);
+        var metrics = new SyncMetrics();
+        using var bridge = CreateBridge("instance-a", registry, backplane, metrics);
 
         await bridge.EnsureSubscribedAsync(Room, CancellationToken.None);
+
+        var snapshot = metrics.Snapshot();
+        Assert.Equal(1, snapshot.BackplaneSubscribeAttempted);
+        Assert.Equal(0, snapshot.BackplaneSubscribeSucceeded);
+        Assert.Equal(1, snapshot.BackplaneSubscribeFailed);
+        Assert.Equal(0, bridge.SubscriptionCount);
     }
 
     [Fact]
@@ -86,12 +108,18 @@ public sealed class SyncBackplaneBridgeTests
     {
         var registry = new SyncRoomRegistry<TestPeer>(maxRooms: 1, maxPeersPerRoom: 4);
         await using var backplane = new FakeSyncBackplane();
-        using var bridge = CreateBridge("instance-a", registry, backplane);
+        var metrics = new SyncMetrics();
+        using var bridge = CreateBridge("instance-a", registry, backplane, metrics);
 
         await bridge.EnsureSubscribedAsync(Room, CancellationToken.None);
         await bridge.EnsureSubscribedAsync(Room, CancellationToken.None);
 
         Assert.Equal(1, backplane.SubscribeCount);
+        Assert.Equal(1, bridge.SubscriptionCount);
+        var snapshot = metrics.Snapshot();
+        Assert.Equal(1, snapshot.BackplaneSubscribeAttempted);
+        Assert.Equal(1, snapshot.BackplaneSubscribeSucceeded);
+        Assert.Equal(0, snapshot.BackplaneSubscribeFailed);
     }
 
     [Fact]
@@ -112,14 +140,16 @@ public sealed class SyncBackplaneBridgeTests
         await bridge.ReleaseIfRoomEmptyAsync(Room);
 
         Assert.Equal(1, backplane.DisposeCount);
+        Assert.Equal(0, bridge.SubscriptionCount);
     }
 
     private static SyncBackplaneBridge<TestPeer> CreateBridge(
         string instanceId,
         SyncRoomRegistry<TestPeer> registry,
-        ISyncBackplane? backplane = null)
+        ISyncBackplane? backplane = null,
+        SyncMetrics? metrics = null)
     {
-        var metrics = new SyncMetrics();
+        metrics ??= new SyncMetrics();
         var broadcaster = new SyncBroadcaster<TestPeer>(
             registry,
             static peer => peer.IsOpen,
@@ -137,6 +167,7 @@ public sealed class SyncBackplaneBridgeTests
             broadcaster,
             backplane ?? NoopSyncBackplane.Instance,
             TimeSpan.FromSeconds(1),
+            metrics,
             NullLogger.Instance);
     }
 

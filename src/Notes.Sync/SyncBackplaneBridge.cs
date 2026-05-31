@@ -10,9 +10,11 @@ public sealed class SyncBackplaneBridge<TConnection> : IDisposable
     private readonly SyncBroadcaster<TConnection> broadcaster;
     private readonly ISyncBackplane backplane;
     private readonly TimeSpan sendTimeout;
+    private readonly SyncMetrics metrics;
     private readonly ILogger logger;
     private readonly Dictionary<string, IDisposable> subscriptions = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim subscriptionGate = new(1, 1);
+    private int subscriptionCount;
 
     public SyncBackplaneBridge(
         string instanceId,
@@ -20,6 +22,7 @@ public sealed class SyncBackplaneBridge<TConnection> : IDisposable
         SyncBroadcaster<TConnection> broadcaster,
         ISyncBackplane backplane,
         TimeSpan sendTimeout,
+        SyncMetrics metrics,
         ILogger logger)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(instanceId);
@@ -27,6 +30,7 @@ public sealed class SyncBackplaneBridge<TConnection> : IDisposable
         ArgumentNullException.ThrowIfNull(broadcaster);
         ArgumentNullException.ThrowIfNull(backplane);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(sendTimeout, TimeSpan.Zero);
+        ArgumentNullException.ThrowIfNull(metrics);
         ArgumentNullException.ThrowIfNull(logger);
 
         this.instanceId = instanceId;
@@ -34,8 +38,11 @@ public sealed class SyncBackplaneBridge<TConnection> : IDisposable
         this.broadcaster = broadcaster;
         this.backplane = backplane;
         this.sendTimeout = sendTimeout;
+        this.metrics = metrics;
         this.logger = logger;
     }
+
+    public int SubscriptionCount => Volatile.Read(ref subscriptionCount);
 
     public async Task<SyncBackplanePublishResult> PublishAsync(
         string room,
@@ -51,16 +58,28 @@ public sealed class SyncBackplaneBridge<TConnection> : IDisposable
             return new SyncBackplanePublishResult(Published: false, RemoteSubscribers: 0);
         }
 
+        metrics.BackplanePublishAttempted();
         try
         {
-            return await backplane.PublishAsync(
+            var result = await backplane.PublishAsync(
                 room,
                 new SyncBackplaneMessage(instanceId, senderConnectionId, payload),
                 cancellationToken);
+            if (result.Published)
+            {
+                metrics.BackplanePublishSucceeded(result.RemoteSubscribers);
+            }
+            else
+            {
+                metrics.BackplanePublishFailed();
+            }
+
+            return result;
         }
         catch (Exception exception) when (exception is not OperationCanceledException ||
                                           !cancellationToken.IsCancellationRequested)
         {
+            metrics.BackplanePublishFailed();
             SyncLog.BackplanePublishFailed(logger, exception, room);
             return new SyncBackplanePublishResult(Published: false, RemoteSubscribers: 0);
         }
@@ -82,16 +101,21 @@ public sealed class SyncBackplaneBridge<TConnection> : IDisposable
                 return;
             }
 
+            metrics.BackplaneSubscribeAttempted();
             try
             {
-                subscriptions[room] = await backplane.SubscribeAsync(
+                var subscription = await backplane.SubscribeAsync(
                     room,
                     (message, token) => ReceiveAsync(room, message, token),
                     cancellationToken);
+                subscriptions[room] = subscription;
+                Interlocked.Increment(ref subscriptionCount);
+                metrics.BackplaneSubscribeSucceeded();
             }
             catch (Exception exception) when (exception is not OperationCanceledException ||
                                               !cancellationToken.IsCancellationRequested)
             {
+                metrics.BackplaneSubscribeFailed();
                 SyncLog.BackplaneSubscribeFailed(logger, exception, room);
             }
         }
@@ -120,6 +144,7 @@ public sealed class SyncBackplaneBridge<TConnection> : IDisposable
             if (subscriptions.Remove(room, out var subscription))
             {
                 subscription.Dispose();
+                Interlocked.Decrement(ref subscriptionCount);
             }
         }
         finally
@@ -138,9 +163,11 @@ public sealed class SyncBackplaneBridge<TConnection> : IDisposable
 
         if (string.Equals(message.OriginInstanceId, instanceId, StringComparison.Ordinal))
         {
+            metrics.BackplaneMessageIgnored();
             return new SyncBroadcastResult(Attempted: 0, Succeeded: 0, Failed: 0);
         }
 
+        metrics.BackplaneMessageReceived();
         cancellationToken.ThrowIfCancellationRequested();
         return await broadcaster.BroadcastAsync(
             room,
@@ -161,6 +188,7 @@ public sealed class SyncBackplaneBridge<TConnection> : IDisposable
             }
 
             subscriptions.Clear();
+            Volatile.Write(ref subscriptionCount, 0);
         }
         finally
         {

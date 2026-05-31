@@ -66,6 +66,8 @@ MMN_SYNC_BACKPLANE_CHANNEL_PREFIX=mmn:sync:prod \
 MMN_SYNC_INSTANCE_ID=relay-a
 ```
 
+The relay exposes `/health` and Prometheus text metrics at `/metrics`. Watch `mmn_sync_active_backplane_subscriptions`, `mmn_sync_backplane_publish_failed_total`, `mmn_sync_backplane_subscribe_failed_total`, `mmn_sync_backplane_invalid_payload_total`, and `mmn_sync_backplane_receive_failed_total` for Redis/backplane degradation. `mmn_sync_backplane_remote_subscribers_total` should move when messages are delivered across relay instances.
+
 ## Projects
 
 - `Notes.Core`: vault, Markdown, inbox, fragments, trails, search, quiet memory.

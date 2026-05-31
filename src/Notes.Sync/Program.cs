@@ -17,13 +17,14 @@ var broadcaster = new SyncBroadcaster<WebSocket>(
     SendSocketAsync,
     options.MaxFanoutConcurrency,
     metrics);
-await using var backplane = await SyncBackplaneFactory.CreateAsync(options, app.Logger);
+await using var backplane = await SyncBackplaneFactory.CreateAsync(options, metrics, app.Logger);
 using var backplaneBridge = new SyncBackplaneBridge<WebSocket>(
     options.InstanceId,
     rooms,
     broadcaster,
     backplane,
     options.SendTimeout,
+    metrics,
     app.Logger);
 
 if (SyncForwardedHeadersPolicy.IsConfigured(options))
@@ -207,6 +208,7 @@ app.MapGet("/health", () =>
         options.MaxMessagesPerMinute,
         options.MaxFanoutConcurrency,
         backplaneEnabled = backplane.IsEnabled,
+        activeBackplaneSubscriptions = backplaneBridge.SubscriptionCount,
         options.BackplaneChannelPrefix,
         options.InstanceId,
         joinTimeoutSeconds = options.JoinTimeout.TotalSeconds,
@@ -218,7 +220,9 @@ app.MapGet("/health", () =>
 
 app.MapGet("/metrics", () =>
 {
-    return Results.Text(metrics.RenderPrometheus(rooms.Stats, connections.ActiveConnections), "text/plain; version=0.0.4");
+    return Results.Text(
+        metrics.RenderPrometheus(rooms.Stats, connections.ActiveConnections, backplaneBridge.SubscriptionCount),
+        "text/plain; version=0.0.4");
 });
 
 await app.RunAsync(Environment.GetEnvironmentVariable("MMN_SYNC_URL") ?? "http://0.0.0.0:5199");

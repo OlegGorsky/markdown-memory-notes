@@ -11,12 +11,18 @@ public sealed class RedisSyncBackplane : ISyncBackplane
     private readonly ISubscriber subscriber;
     private readonly string channelPrefix;
     private readonly ILogger logger;
+    private readonly SyncMetrics metrics;
 
-    private RedisSyncBackplane(ConnectionMultiplexer connection, string channelPrefix, ILogger logger)
+    private RedisSyncBackplane(
+        ConnectionMultiplexer connection,
+        string channelPrefix,
+        SyncMetrics metrics,
+        ILogger logger)
     {
         this.connection = connection;
         this.subscriber = connection.GetSubscriber();
         this.channelPrefix = channelPrefix.Trim().TrimEnd(':');
+        this.metrics = metrics;
         this.logger = logger;
     }
 
@@ -25,14 +31,16 @@ public sealed class RedisSyncBackplane : ISyncBackplane
     public static async Task<RedisSyncBackplane> ConnectAsync(
         string connectionString,
         string channelPrefix,
+        SyncMetrics metrics,
         ILogger logger)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
         ArgumentException.ThrowIfNullOrWhiteSpace(channelPrefix);
+        ArgumentNullException.ThrowIfNull(metrics);
         ArgumentNullException.ThrowIfNull(logger);
 
         var connection = await ConnectionMultiplexer.ConnectAsync(connectionString);
-        return new RedisSyncBackplane(connection, channelPrefix, logger);
+        return new RedisSyncBackplane(connection, channelPrefix, metrics, logger);
     }
 
     public async Task<IDisposable> SubscribeAsync(
@@ -59,10 +67,12 @@ public sealed class RedisSyncBackplane : ISyncBackplane
             }
             catch (JsonException exception)
             {
+                metrics.BackplaneInvalidPayload();
                 SyncLog.BackplaneInvalidPayload(logger, exception, room);
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
+                metrics.BackplaneReceiveFailed();
                 SyncLog.BackplaneReceiveFailed(logger, exception, room);
             }
         });

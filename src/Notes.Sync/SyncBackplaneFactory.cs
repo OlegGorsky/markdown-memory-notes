@@ -4,9 +4,13 @@ namespace Notes.Sync;
 
 public static class SyncBackplaneFactory
 {
-    public static async Task<ISyncBackplane> CreateAsync(SyncServerOptions options, ILogger logger)
+    public static async Task<ISyncBackplane> CreateAsync(
+        SyncServerOptions options,
+        SyncMetrics metrics,
+        ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(metrics);
         ArgumentNullException.ThrowIfNull(logger);
 
         if (string.IsNullOrWhiteSpace(options.BackplaneRedisConnectionString))
@@ -17,6 +21,7 @@ public static class SyncBackplaneFactory
         return await RedisSyncBackplane.ConnectAsync(
             options.BackplaneRedisConnectionString,
             options.BackplaneChannelPrefix,
+            metrics,
             logger);
     }
 }
