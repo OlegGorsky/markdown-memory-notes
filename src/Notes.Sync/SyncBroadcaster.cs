@@ -61,6 +61,7 @@ public sealed class SyncBroadcaster<TConnection>
                 if (!isOpen(peer.Value))
                 {
                     rooms.Leave(room, peer.Key);
+                    metrics.DeliveryFailed();
                     metrics.PeerRemoved();
                     Interlocked.Increment(ref failed);
                     return;

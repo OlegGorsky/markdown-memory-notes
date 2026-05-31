@@ -50,6 +50,7 @@ public sealed class SyncBroadcasterTests
         Assert.Equal(1, result.Attempted);
         Assert.Equal(0, result.Succeeded);
         Assert.Equal(1, result.Failed);
+        Assert.Equal(1, metrics.Snapshot().DeliveriesFailed);
         Assert.Equal(1, metrics.Snapshot().PeersRemoved);
     }
 
