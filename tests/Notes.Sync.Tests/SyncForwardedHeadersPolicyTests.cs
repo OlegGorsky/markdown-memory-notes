@@ -14,6 +14,18 @@ public sealed class SyncForwardedHeadersPolicyTests
     }
 
     [Fact]
+    public void IsConfiguredIsFalseWhenOnlyInvalidTrustedForwardedHeaderSourcesAreConfigured()
+    {
+        var options = SyncServerOptions.Default with
+        {
+            TrustedProxies = ["not-an-ip"],
+            TrustedNetworks = ["bad-cidr"]
+        };
+
+        Assert.False(SyncForwardedHeadersPolicy.IsConfigured(options));
+    }
+
+    [Fact]
     public void CreateBuildsForwardedForPolicyForTrustedProxiesAndNetworks()
     {
         var options = SyncServerOptions.Default with

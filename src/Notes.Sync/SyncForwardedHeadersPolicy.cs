@@ -9,7 +9,8 @@ public static class SyncForwardedHeadersPolicy
     public static bool IsConfigured(SyncServerOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
-        return options.TrustedProxies.Count > 0 || options.TrustedNetworks.Count > 0;
+        return options.TrustedProxies.Any(static proxy => IPAddress.TryParse(proxy, out _)) ||
+               options.TrustedNetworks.Any(static network => TryParseNetwork(network, out _));
     }
 
     public static ForwardedHeadersOptions Create(SyncServerOptions options)
