@@ -8,11 +8,13 @@ var builder = WebApplication.CreateBuilder(args);
 var options = SyncServerOptions.FromConfiguration(builder.Configuration);
 var app = builder.Build();
 var rooms = new SyncRoomRegistry<WebSocket>(options.MaxRooms, options.MaxPeersPerRoom);
+var metrics = new SyncMetrics();
 var broadcaster = new SyncBroadcaster<WebSocket>(
     rooms,
     static socket => socket.State is WebSocketState.Open,
     SendSocketAsync,
-    options.MaxFanoutConcurrency);
+    options.MaxFanoutConcurrency,
+    metrics);
 
 app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(30) });
 
@@ -67,16 +69,19 @@ app.Map("/sync", async (HttpContext context) =>
 
             if (!rateLimit.TryConsume())
             {
+                metrics.MessageRateLimited();
                 await CloseSafeAsync(ws, WebSocketCloseStatus.PolicyViolation, "Rate limit exceeded", context.RequestAborted);
                 break;
             }
 
             if (!SyncRelayMessage.IsValid(message, options.MaxMessageBytes))
             {
+                metrics.MessageRejected();
                 await CloseSafeAsync(ws, WebSocketCloseStatus.InvalidPayloadData, "Invalid sync message", context.RequestAborted);
                 break;
             }
 
+            metrics.MessageReceived();
             await broadcaster.BroadcastAsync(room, connectionId, message, options.SendTimeout, app.Logger);
         }
     }
@@ -114,11 +119,13 @@ app.Map("/sync", async (HttpContext context) =>
 app.MapGet("/health", () =>
 {
     var stats = rooms.Stats;
+    var counters = metrics.Snapshot();
     return Results.Ok(new
     {
         status = "ok",
         rooms = stats.Rooms,
         connections = stats.Connections,
+        counters,
         options.MaxPeersPerRoom,
         options.MaxMessageBytes,
         options.MaxMessagesPerMinute,
@@ -128,11 +135,7 @@ app.MapGet("/health", () =>
 
 app.MapGet("/metrics", () =>
 {
-    var stats = rooms.Stats;
-    var text = string.Create(
-        System.Globalization.CultureInfo.InvariantCulture,
-        $"mmn_sync_rooms {stats.Rooms}\nmmn_sync_connections {stats.Connections}\n");
-    return Results.Text(text, "text/plain; version=0.0.4");
+    return Results.Text(metrics.RenderPrometheus(rooms.Stats), "text/plain; version=0.0.4");
 });
 
 app.Run(Environment.GetEnvironmentVariable("MMN_SYNC_URL") ?? "http://0.0.0.0:5199");

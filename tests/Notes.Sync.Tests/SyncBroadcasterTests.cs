@@ -17,13 +17,16 @@ public sealed class SyncBroadcasterTests
         var peer = new TestPeer();
         registry.TryJoin(Room, senderId, sender);
         registry.TryJoin(Room, Guid.NewGuid(), peer);
+        var metrics = new SyncMetrics();
 
-        var broadcaster = new SyncBroadcaster<TestPeer>(registry, static peer => peer.IsOpen, SendAsync, maxFanoutConcurrency: 4);
+        var broadcaster = new SyncBroadcaster<TestPeer>(registry, static peer => peer.IsOpen, SendAsync, maxFanoutConcurrency: 4, metrics);
 
         await broadcaster.BroadcastAsync(Room, senderId, "payload", TimeSpan.FromSeconds(1), NullLogger.Instance);
 
         Assert.Empty(sender.Messages);
         Assert.Equal(["payload"], peer.Messages);
+        Assert.Equal(1, metrics.Snapshot().DeliveriesAttempted);
+        Assert.Equal(1, metrics.Snapshot().DeliveriesSucceeded);
     }
 
     [Fact]
@@ -34,12 +37,14 @@ public sealed class SyncBroadcasterTests
         var closedPeerId = Guid.NewGuid();
         registry.TryJoin(Room, senderId, new TestPeer());
         registry.TryJoin(Room, closedPeerId, new TestPeer { IsOpen = false });
+        var metrics = new SyncMetrics();
 
-        var broadcaster = new SyncBroadcaster<TestPeer>(registry, static peer => peer.IsOpen, SendAsync, maxFanoutConcurrency: 4);
+        var broadcaster = new SyncBroadcaster<TestPeer>(registry, static peer => peer.IsOpen, SendAsync, maxFanoutConcurrency: 4, metrics);
 
         await broadcaster.BroadcastAsync(Room, senderId, "payload", TimeSpan.FromSeconds(1), NullLogger.Instance);
 
         Assert.DoesNotContain(registry.GetPeers(Room), peer => peer.Key == closedPeerId);
+        Assert.Equal(1, metrics.Snapshot().PeersRemoved);
     }
 
     [Fact]
@@ -72,7 +77,8 @@ public sealed class SyncBroadcasterTests
                     Interlocked.Decrement(ref currentSends);
                 }
             },
-            maxFanoutConcurrency: 2);
+            maxFanoutConcurrency: 2,
+            new SyncMetrics());
 
         await broadcaster.BroadcastAsync(Room, senderId, "payload", TimeSpan.FromSeconds(1), NullLogger.Instance);
 

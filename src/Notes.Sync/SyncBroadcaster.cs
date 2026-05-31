@@ -10,22 +10,26 @@ public sealed class SyncBroadcaster<TConnection>
     private readonly Func<TConnection, bool> isOpen;
     private readonly Func<TConnection, string, CancellationToken, Task> sendAsync;
     private readonly int maxFanoutConcurrency;
+    private readonly SyncMetrics metrics;
 
     public SyncBroadcaster(
         SyncRoomRegistry<TConnection> rooms,
         Func<TConnection, bool> isOpen,
         Func<TConnection, string, CancellationToken, Task> sendAsync,
-        int maxFanoutConcurrency)
+        int maxFanoutConcurrency,
+        SyncMetrics metrics)
     {
         ArgumentNullException.ThrowIfNull(rooms);
         ArgumentNullException.ThrowIfNull(isOpen);
         ArgumentNullException.ThrowIfNull(sendAsync);
+        ArgumentNullException.ThrowIfNull(metrics);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxFanoutConcurrency);
 
         this.rooms = rooms;
         this.isOpen = isOpen;
         this.sendAsync = sendAsync;
         this.maxFanoutConcurrency = maxFanoutConcurrency;
+        this.metrics = metrics;
     }
 
     public async Task BroadcastAsync(
@@ -43,6 +47,7 @@ public sealed class SyncBroadcaster<TConnection>
         var peers = rooms.GetPeers(room)
             .Where(peer => peer.Key != senderId)
             .ToArray();
+        metrics.DeliveryAttempted(peers.Length);
 
         await Parallel.ForEachAsync(
             peers,
@@ -52,6 +57,7 @@ public sealed class SyncBroadcaster<TConnection>
                 if (!isOpen(peer.Value))
                 {
                     rooms.Leave(room, peer.Key);
+                    metrics.PeerRemoved();
                     return;
                 }
 
@@ -59,11 +65,14 @@ public sealed class SyncBroadcaster<TConnection>
                 try
                 {
                     await sendAsync(peer.Value, message, timeout.Token);
+                    metrics.DeliverySucceeded();
                 }
                 catch (Exception exception) when (exception is WebSocketException or OperationCanceledException)
                 {
                     SyncLog.RemovingUnavailablePeer(logger, exception, room);
                     rooms.Leave(room, peer.Key);
+                    metrics.DeliveryFailed();
+                    metrics.PeerRemoved();
                 }
             });
     }
