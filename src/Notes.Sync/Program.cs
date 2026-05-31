@@ -41,6 +41,7 @@ using var presenceCoordinator = new SyncPresenceCoordinator<WebSocket>(
     options.SendTimeout,
     metrics,
     app.Logger);
+broadcaster.SetPeerRemovedHandler(CleanupRemovedPeerAsync);
 
 if (SyncForwardedHeadersPolicy.IsConfigured(options))
 {
@@ -212,6 +213,15 @@ async Task HandleSyncRequestAsync(HttpContext context)
             }
         }
     }
+}
+
+async Task CleanupRemovedPeerAsync(string removedRoom, Guid removedConnectionId, CancellationToken cancellationToken)
+{
+    using var timeout = new CancellationTokenSource(options.SendTimeout);
+    using var cleanupToken = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
+    await admissionCoordinator.PeerLeftAsync(removedRoom, removedConnectionId, cleanupToken.Token);
+    await presenceCoordinator.PeerLeftAsync(removedRoom, removedConnectionId, cleanupToken.Token);
+    await backplaneBridge.ReleaseIfRoomEmptyAsync(removedRoom);
 }
 
 app.MapGet("/health", async (CancellationToken cancellationToken) =>

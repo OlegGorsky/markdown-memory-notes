@@ -55,4 +55,6 @@ public static partial class SyncLog
     [LoggerMessage(EventId = 17, Level = LogLevel.Warning, Message = "Sync admission controller leave failed. Room={Room}")]
     public static partial void AdmissionControllerLeaveFailed(ILogger logger, Exception exception, string room);
 
+    [LoggerMessage(EventId = 18, Level = LogLevel.Warning, Message = "Sync peer cleanup failed. Room={Room}")]
+    public static partial void PeerCleanupFailed(ILogger logger, Exception exception, string room);
 }

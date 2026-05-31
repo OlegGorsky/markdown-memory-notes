@@ -14,6 +14,7 @@ public sealed class SyncMetrics
     private long deliveriesSucceeded;
     private long deliveriesFailed;
     private long peersRemoved;
+    private long peerCleanupFailed;
     private long backplanePublishAttempted;
     private long backplanePublishSucceeded;
     private long backplanePublishFailed;
@@ -85,6 +86,11 @@ public sealed class SyncMetrics
     public void PeerRemoved()
     {
         Interlocked.Increment(ref peersRemoved);
+    }
+
+    public void PeerCleanupFailed()
+    {
+        Interlocked.Increment(ref peerCleanupFailed);
     }
 
     public void BackplanePublishAttempted()
@@ -196,6 +202,7 @@ public sealed class SyncMetrics
             Interlocked.Read(ref deliveriesSucceeded),
             Interlocked.Read(ref deliveriesFailed),
             Interlocked.Read(ref peersRemoved),
+            Interlocked.Read(ref peerCleanupFailed),
             Interlocked.Read(ref backplanePublishAttempted),
             Interlocked.Read(ref backplanePublishSucceeded),
             Interlocked.Read(ref backplanePublishFailed),
@@ -242,6 +249,7 @@ public sealed class SyncMetrics
             mmn_sync_deliveries_succeeded_total {snapshot.DeliveriesSucceeded}
             mmn_sync_deliveries_failed_total {snapshot.DeliveriesFailed}
             mmn_sync_peers_removed_total {snapshot.PeersRemoved}
+            mmn_sync_peer_cleanup_failed_total {snapshot.PeerCleanupFailed}
             mmn_sync_backplane_publish_attempted_total {snapshot.BackplanePublishAttempted}
             mmn_sync_backplane_publish_succeeded_total {snapshot.BackplanePublishSucceeded}
             mmn_sync_backplane_publish_failed_total {snapshot.BackplanePublishFailed}
@@ -277,6 +285,7 @@ public sealed record SyncMetricSnapshot(
     long DeliveriesSucceeded,
     long DeliveriesFailed,
     long PeersRemoved,
+    long PeerCleanupFailed,
     long BackplanePublishAttempted,
     long BackplanePublishSucceeded,
     long BackplanePublishFailed,

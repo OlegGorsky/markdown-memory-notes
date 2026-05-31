@@ -21,6 +21,7 @@ public sealed class SyncMetricsTests
         metrics.DeliverySucceeded();
         metrics.DeliveryFailed();
         metrics.PeerRemoved();
+        metrics.PeerCleanupFailed();
         metrics.BackplanePublishAttempted();
         metrics.BackplanePublishSucceeded(remoteSubscribers: 2);
         metrics.BackplanePublishFailed();
@@ -52,6 +53,7 @@ public sealed class SyncMetricsTests
         Assert.Equal(1, snapshot.DeliveriesSucceeded);
         Assert.Equal(1, snapshot.DeliveriesFailed);
         Assert.Equal(1, snapshot.PeersRemoved);
+        Assert.Equal(1, snapshot.PeerCleanupFailed);
         Assert.Equal(1, snapshot.BackplanePublishAttempted);
         Assert.Equal(1, snapshot.BackplanePublishSucceeded);
         Assert.Equal(1, snapshot.BackplanePublishFailed);
@@ -102,6 +104,7 @@ public sealed class SyncMetricsTests
         Assert.Contains("mmn_sync_join_rejected_total 0", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_deliveries_attempted_total 2", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_deliveries_succeeded_total 1", text, StringComparison.Ordinal);
+        Assert.Contains("mmn_sync_peer_cleanup_failed_total 0", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_backplane_publish_attempted_total 1", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_backplane_publish_succeeded_total 1", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_backplane_publish_failed_total 0", text, StringComparison.Ordinal);

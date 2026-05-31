@@ -81,6 +81,55 @@ public sealed class SyncBroadcasterTests
     }
 
     [Fact]
+    public async Task BroadcastAsyncRunsPeerRemovedHandlerWhenSendFails()
+    {
+        var registry = new SyncRoomRegistry<TestPeer>(maxRooms: 1, maxPeersPerRoom: 4);
+        var senderId = Guid.NewGuid();
+        var failedPeerId = Guid.NewGuid();
+        registry.TryJoin(Room, senderId, new TestPeer());
+        registry.TryJoin(Room, failedPeerId, new TestPeer());
+        (string Room, Guid ConnectionId)? removed = null;
+        var broadcaster = new SyncBroadcaster<TestPeer>(
+            registry,
+            static peer => peer.IsOpen,
+            static (_, _, _) => throw new InvalidOperationException("Socket is no longer writable."),
+            maxFanoutConcurrency: 4,
+            new SyncMetrics());
+        broadcaster.SetPeerRemovedHandler((room, connectionId, _) =>
+        {
+            removed = (room, connectionId);
+            return Task.CompletedTask;
+        });
+
+        await broadcaster.BroadcastAsync(Room, senderId, "payload", TimeSpan.FromSeconds(1), NullLogger.Instance);
+
+        Assert.Equal((Room, failedPeerId), removed);
+    }
+
+    [Fact]
+    public async Task BroadcastAsyncDoesNotFailWhenPeerRemovedHandlerFails()
+    {
+        var registry = new SyncRoomRegistry<TestPeer>(maxRooms: 1, maxPeersPerRoom: 4);
+        var senderId = Guid.NewGuid();
+        var failedPeerId = Guid.NewGuid();
+        registry.TryJoin(Room, senderId, new TestPeer());
+        registry.TryJoin(Room, failedPeerId, new TestPeer());
+        var metrics = new SyncMetrics();
+        var broadcaster = new SyncBroadcaster<TestPeer>(
+            registry,
+            static peer => peer.IsOpen,
+            static (_, _, _) => throw new InvalidOperationException("Socket is no longer writable."),
+            maxFanoutConcurrency: 4,
+            metrics);
+        broadcaster.SetPeerRemovedHandler((_, _, _) => throw new InvalidOperationException("Cleanup failed."));
+
+        var result = await broadcaster.BroadcastAsync(Room, senderId, "payload", TimeSpan.FromSeconds(1), NullLogger.Instance);
+
+        Assert.Equal(1, result.Failed);
+        Assert.Equal(1, metrics.Snapshot().PeerCleanupFailed);
+    }
+
+    [Fact]
     public async Task BroadcastAsyncBoundsConcurrentSends()
     {
         var registry = new SyncRoomRegistry<TestPeer>(maxRooms: 1, maxPeersPerRoom: 8);

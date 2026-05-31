@@ -15,6 +15,7 @@ public sealed class SyncBroadcaster<TConnection>
     private readonly SyncMetrics metrics;
     private readonly Lock sendGateLock = new();
     private readonly Dictionary<Guid, SendGate> sendGates = new();
+    private Func<string, Guid, CancellationToken, Task>? peerRemovedHandler;
 
     public SyncBroadcaster(
         SyncRoomRegistry<TConnection> rooms,
@@ -47,6 +48,12 @@ public sealed class SyncBroadcaster<TConnection>
         }
     }
 
+    public void SetPeerRemovedHandler(Func<string, Guid, CancellationToken, Task> handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        peerRemovedHandler = handler;
+    }
+
     public async Task<SyncBroadcastResult> BroadcastAsync(
         string room,
         Guid senderId,
@@ -73,7 +80,7 @@ public sealed class SyncBroadcaster<TConnection>
             {
                 if (!isOpen(peer.Value))
                 {
-                    RemovePeer(room, peer.Key);
+                    await RemovePeerAsync(room, peer.Key, logger, CancellationToken.None);
                     metrics.DeliveryFailed();
                     metrics.PeerRemoved();
                     Interlocked.Increment(ref failed);
@@ -95,7 +102,7 @@ public sealed class SyncBroadcaster<TConnection>
                 catch (Exception exception) when (IsUnavailablePeerException(exception))
                 {
                     SyncLog.RemovingUnavailablePeer(logger, exception, room);
-                    RemovePeer(room, peer.Key);
+                    await RemovePeerAsync(room, peer.Key, logger, CancellationToken.None);
                     metrics.DeliveryFailed();
                     metrics.PeerRemoved();
                     Interlocked.Increment(ref failed);
@@ -130,10 +137,27 @@ public sealed class SyncBroadcaster<TConnection>
             ObjectDisposedException;
     }
 
-    private void RemovePeer(string room, Guid connectionId)
+    private async Task RemovePeerAsync(
+        string room,
+        Guid connectionId,
+        ILogger logger,
+        CancellationToken cancellationToken)
     {
         rooms.Leave(room, connectionId);
         ForgetPeer(connectionId);
+        if (peerRemovedHandler is not null)
+        {
+            try
+            {
+                await peerRemovedHandler(room, connectionId, cancellationToken);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException ||
+                                              !cancellationToken.IsCancellationRequested)
+            {
+                metrics.PeerCleanupFailed();
+                SyncLog.PeerCleanupFailed(logger, exception, room);
+            }
+        }
     }
 
     private void TryRemoveForgottenGate(Guid connectionId, SendGate sendGate)
