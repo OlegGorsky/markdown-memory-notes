@@ -41,11 +41,11 @@ else
         StateHasChanged();
     }
 
-    private async Task DoSearchAsync()
+    private Task DoSearchAsync()
     {
-        if (string.IsNullOrWhiteSpace(_query)) return;
-        await Session.RebuildIndexAsync();
+        if (string.IsNullOrWhiteSpace(_query)) return Task.CompletedTask;
         _results = Session.Search(_query).ToList();
+        return Task.CompletedTask;
     }
 
     private async Task HandleKeyDown(KeyboardEventArgs e)
