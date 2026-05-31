@@ -54,6 +54,32 @@ public sealed class SyncBroadcasterTests
     }
 
     [Fact]
+    public async Task BroadcastAsyncRemovesPeerWhenSendFailsAfterOpenCheck()
+    {
+        var registry = new SyncRoomRegistry<TestPeer>(maxRooms: 1, maxPeersPerRoom: 4);
+        var senderId = Guid.NewGuid();
+        var failedPeerId = Guid.NewGuid();
+        registry.TryJoin(Room, senderId, new TestPeer());
+        registry.TryJoin(Room, failedPeerId, new TestPeer());
+        var metrics = new SyncMetrics();
+        var broadcaster = new SyncBroadcaster<TestPeer>(
+            registry,
+            static peer => peer.IsOpen,
+            static (_, _, _) => throw new InvalidOperationException("Socket is no longer writable."),
+            maxFanoutConcurrency: 4,
+            metrics);
+
+        var result = await broadcaster.BroadcastAsync(Room, senderId, "payload", TimeSpan.FromSeconds(1), NullLogger.Instance);
+
+        Assert.DoesNotContain(registry.GetPeers(Room), peer => peer.Key == failedPeerId);
+        Assert.Equal(1, result.Attempted);
+        Assert.Equal(0, result.Succeeded);
+        Assert.Equal(1, result.Failed);
+        Assert.Equal(1, metrics.Snapshot().DeliveriesFailed);
+        Assert.Equal(1, metrics.Snapshot().PeersRemoved);
+    }
+
+    [Fact]
     public async Task BroadcastAsyncBoundsConcurrentSends()
     {
         var registry = new SyncRoomRegistry<TestPeer>(maxRooms: 1, maxPeersPerRoom: 8);

@@ -73,7 +73,7 @@ public sealed class SyncBroadcaster<TConnection>
                     metrics.DeliverySucceeded();
                     Interlocked.Increment(ref succeeded);
                 }
-                catch (Exception exception) when (exception is WebSocketException or OperationCanceledException)
+                catch (Exception exception) when (IsUnavailablePeerException(exception))
                 {
                     SyncLog.RemovingUnavailablePeer(logger, exception, room);
                     rooms.Leave(room, peer.Key);
@@ -84,5 +84,13 @@ public sealed class SyncBroadcaster<TConnection>
             });
 
         return new SyncBroadcastResult(peers.Length, succeeded, failed);
+    }
+
+    private static bool IsUnavailablePeerException(Exception exception)
+    {
+        return exception is WebSocketException or
+            OperationCanceledException or
+            InvalidOperationException or
+            ObjectDisposedException;
     }
 }
