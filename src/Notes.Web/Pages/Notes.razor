@@ -97,8 +97,8 @@ else
                     </div>
                     @if (_previewMode)
                     {
-                        <div class="md-preview animate-in">
-                            @((MarkupString)Markdown.ToHtml(_editBody))
+                        <div class="md-preview animate-in" @onclick="() => _previewMode = false">
+                            @((MarkupString)Markdig.Markdown.ToHtml(_editBody))
                         </div>
                     }
                     else
