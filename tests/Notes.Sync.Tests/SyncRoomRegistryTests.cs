@@ -29,6 +29,21 @@ public sealed class SyncRoomRegistryTests
     }
 
     [Fact]
+    public void TryJoinReplacesExistingConnectionWhenRoomIsFull()
+    {
+        var registry = new SyncRoomRegistry<string>(maxRooms: 1, maxPeersPerRoom: 1);
+        var connectionId = Guid.NewGuid();
+
+        Assert.Equal(SyncJoinResult.Joined, registry.TryJoin(RoomOne, connectionId, "peer-a"));
+        Assert.Equal(SyncJoinResult.Joined, registry.TryJoin(RoomOne, connectionId, "peer-a-reconnected"));
+
+        var peer = Assert.Single(registry.GetPeers(RoomOne));
+        Assert.Equal(connectionId, peer.Key);
+        Assert.Equal("peer-a-reconnected", peer.Value);
+        Assert.Equal(new SyncRoomStats(Rooms: 1, Connections: 1), registry.Stats);
+    }
+
+    [Fact]
     public void LeaveRemovesEmptyRoomsFromStats()
     {
         var registry = new SyncRoomRegistry<string>(maxRooms: 2, maxPeersPerRoom: 2);

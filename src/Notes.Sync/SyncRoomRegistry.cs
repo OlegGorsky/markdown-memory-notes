@@ -49,7 +49,7 @@ public sealed class SyncRoomRegistry<TConnection>
                 rooms[room] = peers;
             }
 
-            if (peers.Count >= maxPeersPerRoom)
+            if (!peers.ContainsKey(connectionId) && peers.Count >= maxPeersPerRoom)
             {
                 return SyncJoinResult.RoomFull;
             }
