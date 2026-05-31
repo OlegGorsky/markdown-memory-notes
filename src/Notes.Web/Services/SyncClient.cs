@@ -8,8 +8,13 @@ namespace MemoryNotes.Web.Services;
 public sealed class SyncClient : IAsyncDisposable
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private const int DefaultMaxQueuedOperations = 256;
 
     private readonly IJSRuntime js;
+    private readonly int maxQueuedOperations;
+    private readonly Lock pendingGate = new();
+    private readonly Dictionary<string, SyncMessage> pendingByPath = new(StringComparer.Ordinal);
+    private readonly Queue<string> pendingOrder = new();
     private IJSObjectReference? _module;
     private DotNetObjectReference<SyncClient>? _selfRef;
     private string? _room;
@@ -17,11 +22,20 @@ public sealed class SyncClient : IAsyncDisposable
 
     public bool IsConnected { get; private set; }
     public string? Status { get; private set; }
+    public string? Room => _room;
     public event EventHandler? StateChanged;
 
     public SyncClient(IJSRuntime js)
+        : this(js, DefaultMaxQueuedOperations)
     {
+    }
+
+    public SyncClient(IJSRuntime js, int maxQueuedOperations)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxQueuedOperations);
+
         this.js = js;
+        this.maxQueuedOperations = maxQueuedOperations;
     }
 
     public async Task ConnectAsync(string room, Func<string, string?, Task> onFileReceived)
@@ -35,6 +49,11 @@ public sealed class SyncClient : IAsyncDisposable
     public async Task ConnectAsync(Uri serverUrl, string room, Func<string, string?, Task> onFileReceived)
     {
         ValidateRoom(room);
+        if (!string.Equals(_room, room, StringComparison.Ordinal))
+        {
+            ClearPending();
+        }
+
         _room = room;
         _onFileReceived = onFileReceived;
         _selfRef = DotNetObjectReference.Create(this);
@@ -45,28 +64,22 @@ public sealed class SyncClient : IAsyncDisposable
 
     public async Task SendFileAsync(string relativePath, string content)
     {
-        if (!IsConnected) return;
         if (!VaultRelativePath.TryNormalizeMarkdownContentPath(relativePath, out var normalizedPath))
         {
             throw new ArgumentException("Sync path is outside supported Markdown content.", nameof(relativePath));
         }
 
-        var msg = JsonSerializer.Serialize(new SyncMessage("file", normalizedPath, content), JsonOptions);
-        var mod = await ModuleAsync();
-        await mod.InvokeVoidAsync("send", msg);
+        await SendOrQueueAsync(new SyncMessage("file", normalizedPath, content));
     }
 
     public async Task SendDeleteAsync(string relativePath)
     {
-        if (!IsConnected) return;
         if (!VaultRelativePath.TryNormalizeMarkdownContentPath(relativePath, out var normalizedPath))
         {
             throw new ArgumentException("Sync path is outside supported Markdown content.", nameof(relativePath));
         }
 
-        var msg = JsonSerializer.Serialize(new SyncMessage("delete", normalizedPath, null), JsonOptions);
-        var mod = await ModuleAsync();
-        await mod.InvokeVoidAsync("send", msg);
+        await SendOrQueueAsync(new SyncMessage("delete", normalizedPath, null));
     }
 
     public async Task DisconnectAsync()
@@ -101,11 +114,15 @@ public sealed class SyncClient : IAsyncDisposable
     }
 
     [JSInvokable]
-    public void OnStatus(string status)
+    public async Task OnStatus(string status)
     {
         IsConnected = status == "connected";
         Status = status;
         StateChanged?.Invoke(this, EventArgs.Empty);
+        if (IsConnected)
+        {
+            await FlushPendingAsync();
+        }
     }
 
     private async Task<IJSObjectReference> ModuleAsync()
@@ -118,6 +135,107 @@ public sealed class SyncClient : IAsyncDisposable
         if (!SyncPairingCode.IsValid(room))
         {
             throw new ArgumentException("Sync room code is not a valid pairing code.", nameof(room));
+        }
+    }
+
+    private async Task SendOrQueueAsync(SyncMessage message)
+    {
+        if (!IsConnected)
+        {
+            QueuePending(message);
+            return;
+        }
+
+        try
+        {
+            await SendNowAsync(message);
+        }
+        catch (JSException)
+        {
+            QueuePending(message);
+            IsConnected = false;
+            Status = "disconnected";
+            StateChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private async Task FlushPendingAsync()
+    {
+        while (IsConnected)
+        {
+            var message = DequeuePending();
+            if (message is null)
+            {
+                return;
+            }
+
+            try
+            {
+                await SendNowAsync(message);
+            }
+            catch (JSException)
+            {
+                QueuePending(message);
+                IsConnected = false;
+                Status = "disconnected";
+                StateChanged?.Invoke(this, EventArgs.Empty);
+                return;
+            }
+        }
+    }
+
+    private async Task SendNowAsync(SyncMessage message)
+    {
+        var json = JsonSerializer.Serialize(message, JsonOptions);
+        var mod = await ModuleAsync();
+        await mod.InvokeVoidAsync("send", json);
+    }
+
+    private void QueuePending(SyncMessage message)
+    {
+        if (_room is null || message.Path is null)
+        {
+            return;
+        }
+
+        lock (pendingGate)
+        {
+            if (!pendingByPath.ContainsKey(message.Path))
+            {
+                while (pendingByPath.Count >= maxQueuedOperations && pendingOrder.TryDequeue(out var oldPath))
+                {
+                    pendingByPath.Remove(oldPath);
+                }
+
+                pendingOrder.Enqueue(message.Path);
+            }
+
+            pendingByPath[message.Path] = message;
+        }
+    }
+
+    private SyncMessage? DequeuePending()
+    {
+        lock (pendingGate)
+        {
+            while (pendingOrder.TryDequeue(out var path))
+            {
+                if (pendingByPath.Remove(path, out var message))
+                {
+                    return message;
+                }
+            }
+
+            return null;
+        }
+    }
+
+    private void ClearPending()
+    {
+        lock (pendingGate)
+        {
+            pendingByPath.Clear();
+            pendingOrder.Clear();
         }
     }
 

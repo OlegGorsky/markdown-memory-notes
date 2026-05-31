@@ -56,7 +56,7 @@ else
                                 {
                                     <button class="glass-btn glass-btn-sm" title="Код: @vault.SyncCode"
                                             @onclick="() => _syncModalVault = vault.Id" @onclick:stopPropagation="true">
-                                        <LucideIcon Name="@(Sync.IsConnected ? "check" : "refresh-cw")" />
+                                        <LucideIcon Name="@(IsVaultSyncConnected(vault) ? "check" : "refresh-cw")" />
                                     </button>
                                 }
                                 <button class="glass-btn glass-btn-sm" title="Удалить хранилище"
@@ -169,7 +169,7 @@ else
                         <p class="text-muted">Код этой папки:</p>
                         <div class="sync-code-display">@vault.SyncCode</div>
                         <p class="text-muted mt-2">Введите этот код на другом устройстве, чтобы подключиться.</p>
-                        @if (Sync.IsConnected)
+                        @if (IsVaultSyncConnected(vault))
                         {
                             <span class="sync-badge connected">Подключено</span>
                         }
@@ -489,7 +489,7 @@ else
 
         var relativePath = GetRelativePath(note.Path);
         await Session.Notes.DeleteAsync(note);
-        if (Sync.IsConnected)
+        if (CanSendForActiveVault)
         {
             await Sync.SendDeleteAsync(relativePath);
         }
@@ -529,7 +529,7 @@ else
         if (_selectedNote is null) return;
         var updated = _selectedNote with { Title = _editTitle, Body = _editBody };
         _selectedNote = await Session.Notes.SaveAsync(updated);
-        if (Sync.IsConnected)
+        if (CanSendForActiveVault)
         {
             var relativePath = GetRelativePath(_selectedNote.Path);
             var content = await FS.ReadAllTextAsync(_selectedNote.Path);
@@ -553,6 +553,26 @@ else
 
             await InvokeAsync(ReloadNotesAsync);
         });
+    }
+
+    private bool CanSendForActiveVault
+    {
+        get
+        {
+            var vault = _vaults.FirstOrDefault(v => v.Id == _activeVaultId);
+            return vault is not null && IsVaultSyncRoom(vault);
+        }
+    }
+
+    private bool IsVaultSyncConnected(VaultEntry vault)
+    {
+        return Sync.IsConnected && IsVaultSyncRoom(vault);
+    }
+
+    private bool IsVaultSyncRoom(VaultEntry vault)
+    {
+        return vault.SyncCode is not null &&
+               string.Equals(vault.SyncCode, Sync.Room, StringComparison.Ordinal);
     }
 
     private async Task SelectNoteAsync(Note note)
