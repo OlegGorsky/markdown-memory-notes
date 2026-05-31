@@ -90,4 +90,20 @@ public sealed class InMemorySearchIndexTests
         Assert.Equal(7, result.Score);
         Assert.Equal(["quiet"], result.MatchedTerms);
     }
+
+    [Fact]
+    public void SearchDoesNotMatchQueryTermsInsideLargerWords()
+    {
+        var index = new InMemorySearchIndex();
+        var now = DateTimeOffset.Now;
+        index.Rebuild([
+            new Note("note_a", "Discarded draft", "/a.md", "The card was never mentioned.", now, now),
+            new Note("note_b", "Archive", "/b.md", "A discarded fragment", now, now)
+        ]);
+
+        var results = index.Search("card", 5);
+
+        var result = Assert.Single(results);
+        Assert.Equal("note_a", result.Note.Id);
+    }
 }
