@@ -9,7 +9,7 @@ public sealed class SyncClient : IAsyncDisposable
     private IJSObjectReference? _module;
     private DotNetObjectReference<SyncClient>? _selfRef;
     private string? _room;
-    private Func<string, string, Task>? _onFileReceived;
+    private Func<string, string?, Task>? _onFileReceived;
 
     public bool IsConnected { get; private set; }
     public string? Status { get; private set; }
@@ -20,7 +20,14 @@ public sealed class SyncClient : IAsyncDisposable
         this.js = js;
     }
 
-    public async Task ConnectAsync(Uri serverUrl, string room, Func<string, string, Task> onFileReceived)
+    public async Task ConnectAsync(string room, Func<string, string?, Task> onFileReceived)
+    {
+        var mod = await ModuleAsync();
+        var serverUrl = await mod.InvokeAsync<string>("getDefaultSyncUrl");
+        await ConnectAsync(new Uri(serverUrl), room, onFileReceived);
+    }
+
+    public async Task ConnectAsync(Uri serverUrl, string room, Func<string, string?, Task> onFileReceived)
     {
         _room = room;
         _onFileReceived = onFileReceived;
@@ -34,6 +41,14 @@ public sealed class SyncClient : IAsyncDisposable
     {
         if (!IsConnected) return;
         var msg = JsonSerializer.Serialize(new SyncMessage("file", relativePath, content));
+        var mod = await ModuleAsync();
+        await mod.InvokeVoidAsync("send", msg);
+    }
+
+    public async Task SendDeleteAsync(string relativePath)
+    {
+        if (!IsConnected) return;
+        var msg = JsonSerializer.Serialize(new SyncMessage("delete", relativePath, null));
         var mod = await ModuleAsync();
         await mod.InvokeVoidAsync("send", msg);
     }
@@ -55,6 +70,10 @@ public sealed class SyncClient : IAsyncDisposable
             if (msg?.Type == "file" && msg.Path is not null && msg.Content is not null)
             {
                 _ = _onFileReceived?.Invoke(msg.Path, msg.Content);
+            }
+            else if (msg?.Type == "delete" && msg.Path is not null)
+            {
+                _ = _onFileReceived?.Invoke(msg.Path, null);
             }
         }
         catch (JsonException) { }

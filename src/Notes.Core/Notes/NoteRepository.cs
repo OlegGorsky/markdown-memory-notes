@@ -79,6 +79,11 @@ public sealed class NoteRepository
         return note with { Updated = updated };
     }
 
+    public Task DeleteAsync(Note note)
+    {
+        return fileSystem.DeleteFileAsync(note.Path);
+    }
+
     private static DateTimeOffset ParseDate(string value)
     {
         return DateTimeOffset.TryParse(value, out var parsed) ? parsed : DateTimeOffset.MinValue;

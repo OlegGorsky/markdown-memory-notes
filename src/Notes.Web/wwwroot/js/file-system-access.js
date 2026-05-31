@@ -6,14 +6,16 @@ const STORE_NAME = 'handles';
 
 let rootHandle = null;
 let vaultName = null;
+let vaultId = null;
 
 /** Try to restore a previously saved vault handle from IndexedDB */
-export async function tryRestoreVault() {
+export async function tryRestoreVault(id = null) {
     try {
         const db = await openDB();
         const tx = db.transaction(STORE_NAME, 'readonly');
         const store = tx.objectStore(STORE_NAME);
-        const req = store.get('root');
+        const requestedId = id || await readActiveVaultId(store);
+        const req = store.get(requestedId && requestedId !== 'root' ? handleKey(requestedId) : 'root');
         const result = await new Promise((resolve, reject) => {
             req.onsuccess = () => resolve(req.result);
             req.onerror = () => reject(req.error);
@@ -24,7 +26,13 @@ export async function tryRestoreVault() {
                 (await result.handle.requestPermission({ mode: 'readwrite' })) === 'granted')) {
                 rootHandle = result.handle;
                 vaultName = result.handle.name;
-                return vaultName;
+                vaultId = result.vaultId || requestedId || 'root';
+                try {
+                    await saveActiveVaultId(vaultId);
+                } catch {
+                    // The vault can still be used for this session.
+                }
+                return currentVault();
             }
         }
     } catch {
@@ -34,24 +42,30 @@ export async function tryRestoreVault() {
 }
 
 /** Open a vault directory via picker and persist the handle */
-export async function openVault() {
+export async function openVault(id = null) {
     try {
         rootHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
         vaultName = rootHandle.name;
-        await saveHandle(rootHandle);
-        return vaultName;
+        vaultId = id || newVaultId();
+        await saveHandle(rootHandle, vaultId);
+        return currentVault();
     } catch (err) {
         if (err.name === 'AbortError') return null;
         throw err;
     }
 }
 
-async function saveHandle(handle) {
+export async function switchVault(id) {
+    return await tryRestoreVault(id);
+}
+
+async function saveHandle(handle, id) {
     try {
         const db = await openDB();
         const tx = db.transaction(STORE_NAME, 'readwrite');
         const store = tx.objectStore(STORE_NAME);
-        store.put({ id: 'root', handle });
+        store.put({ id: handleKey(id), vaultId: id, name: handle.name, handle });
+        store.put({ id: 'active', vaultId: id });
         await new Promise((resolve, reject) => {
             tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error);
@@ -61,11 +75,45 @@ async function saveHandle(handle) {
     }
 }
 
+function currentVault() {
+    return { Id: vaultId, Name: vaultName, Path: `/browser-vaults/${vaultId}` };
+}
+
+function handleKey(id) {
+    return `vault:${id}`;
+}
+
+function newVaultId() {
+    return `v_${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`;
+}
+
+async function readActiveVaultId(store) {
+    const req = store.get('active');
+    const result = await new Promise((resolve, reject) => {
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+    });
+    return result?.vaultId || null;
+}
+
+async function saveActiveVaultId(id) {
+    const db = await openDB();
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    store.put({ id: 'active', vaultId: id });
+    await new Promise((resolve, reject) => {
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
 function openDB() {
     return new Promise((resolve, reject) => {
         const req = indexedDB.open(DB_NAME, DB_VERSION);
         req.onupgradeneeded = () => {
-            req.result.createObjectStore(STORE_NAME, { keyPath: 'id' });
+            if (!req.result.objectStoreNames.contains(STORE_NAME)) {
+                req.result.createObjectStore(STORE_NAME, { keyPath: 'id' });
+            }
         };
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error);
@@ -148,6 +196,21 @@ export async function writeAllText(relativePath, contents) {
     const writable = await fileHandle.createWritable();
     await writable.write(contents);
     await writable.close();
+}
+
+/** Delete a file relative to root. Missing files are treated as already gone. */
+export async function deleteFile(relativePath) {
+    if (!rootHandle) throw new Error('No vault opened');
+    if (!relativePath) throw new Error('Invalid path');
+    const parts = relativePath.split('/').filter(p => p);
+    if (parts.length === 0) throw new Error('Invalid path');
+    const fileName = parts.pop();
+    const dir = parts.length > 0 ? await resolvePath(rootHandle, parts.join('/')) : rootHandle;
+    try {
+        await dir.removeEntry(fileName);
+    } catch (err) {
+        if (err.name !== 'NotFoundError') throw err;
+    }
 }
 
 /** Enumerate files matching a glob pattern in a directory tree */

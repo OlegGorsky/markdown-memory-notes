@@ -55,6 +55,19 @@ public sealed class NoteRepositoryTests
         Assert.DoesNotContain("Original", text, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task DeleteRemovesMarkdownFileFromVault()
+    {
+        var vault = await CreateVaultAsync();
+        var repository = new NoteRepository(new PhysicalFileSystem());
+        var created = await repository.CreateAsync(vault, "Disposable", "Remove me");
+
+        await repository.DeleteAsync(created);
+
+        Assert.False(File.Exists(created.Path));
+        Assert.DoesNotContain((await repository.ListAsync(vault)), note => note.Id == created.Id);
+    }
+
     private static Task<CoreVault> CreateVaultAsync()
     {
         var root = Path.Combine(Path.GetTempPath(), "mmn-tests", Guid.NewGuid().ToString("N"));

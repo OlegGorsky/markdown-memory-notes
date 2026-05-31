@@ -17,29 +17,43 @@ public sealed class BrowserFileSystem : IFileSystem, IAsyncDisposable
     }
 
     public bool IsAvailable { get; private set; }
+    public string? CurrentVaultId { get; private set; }
+    public string? CurrentVaultName { get; private set; }
 
-    public async Task<string?> TryRestoreVaultAsync()
+    public async Task<BrowserVaultHandle?> TryRestoreVaultAsync(string? vaultId = null)
     {
         var mod = await module.Value;
-        var name = await mod.InvokeAsync<string?>("tryRestoreVault");
-        if (name is not null)
+        var handle = await mod.InvokeAsync<BrowserVaultHandle?>("tryRestoreVault", vaultId);
+        if (handle is not null)
         {
-            vaultFullPath = Path.GetFullPath(name);
+            SetCurrentVault(handle);
             IsAvailable = true;
         }
-        return name;
+        return handle;
     }
 
-    public async Task<string?> OpenVaultAsync()
+    public async Task<BrowserVaultHandle?> OpenVaultAsync(string? vaultId = null)
     {
         var mod = await module.Value;
-        var name = await mod.InvokeAsync<string?>("openVault");
-        if (name is not null)
+        var handle = await mod.InvokeAsync<BrowserVaultHandle?>("openVault", vaultId);
+        if (handle is not null)
         {
-            vaultFullPath = Path.GetFullPath(name);
+            SetCurrentVault(handle);
             IsAvailable = true;
         }
-        return name;
+        return handle;
+    }
+
+    public async Task<BrowserVaultHandle?> SwitchVaultAsync(string vaultId)
+    {
+        var mod = await module.Value;
+        var handle = await mod.InvokeAsync<BrowserVaultHandle?>("switchVault", vaultId);
+        if (handle is not null)
+        {
+            SetCurrentVault(handle);
+            IsAvailable = true;
+        }
+        return handle;
     }
 
     private string Rel(string path)
@@ -52,6 +66,13 @@ public sealed class BrowserFileSystem : IFileSystem, IAsyncDisposable
             return string.IsNullOrEmpty(rel) ? "" : rel;
         }
         return full;
+    }
+
+    private void SetCurrentVault(BrowserVaultHandle handle)
+    {
+        CurrentVaultId = handle.Id;
+        CurrentVaultName = handle.Name;
+        vaultFullPath = Path.GetFullPath(handle.Path);
     }
 
     public async Task<bool> DirectoryExistsAsync(string path)
@@ -84,6 +105,12 @@ public sealed class BrowserFileSystem : IFileSystem, IAsyncDisposable
         await mod.InvokeVoidAsync("writeAllText", Rel(path), contents);
     }
 
+    public async Task DeleteFileAsync(string path)
+    {
+        var mod = await module.Value;
+        await mod.InvokeVoidAsync("deleteFile", Rel(path));
+    }
+
     public async Task<IEnumerable<string>> EnumerateFilesAsync(string path, string searchPattern, SearchOption searchOption)
     {
         var mod = await module.Value;
@@ -101,3 +128,5 @@ public sealed class BrowserFileSystem : IFileSystem, IAsyncDisposable
         }
     }
 }
+
+public sealed record BrowserVaultHandle(string Id, string Name, string Path);

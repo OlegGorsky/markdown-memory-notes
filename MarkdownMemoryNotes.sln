@@ -17,6 +17,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Notes.Web", "src\Notes.Web\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Notes.Sync", "src\Notes.Sync\Notes.Sync.csproj", "{3C8A289B-CB5E-466A-9FB5-80CA5B14E2E3}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0AB3BF05-4346-4AA6-1389-037BE0695223}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Notes.Sync.Tests", "tests\Notes.Sync.Tests\Notes.Sync.Tests.csproj", "{5C59B9C1-3AE7-4F3D-B307-B69DB9204527}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -99,6 +103,18 @@ Global
 		{3C8A289B-CB5E-466A-9FB5-80CA5B14E2E3}.Release|x64.Build.0 = Release|Any CPU
 		{3C8A289B-CB5E-466A-9FB5-80CA5B14E2E3}.Release|x86.ActiveCfg = Release|Any CPU
 		{3C8A289B-CB5E-466A-9FB5-80CA5B14E2E3}.Release|x86.Build.0 = Release|Any CPU
+		{5C59B9C1-3AE7-4F3D-B307-B69DB9204527}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5C59B9C1-3AE7-4F3D-B307-B69DB9204527}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5C59B9C1-3AE7-4F3D-B307-B69DB9204527}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{5C59B9C1-3AE7-4F3D-B307-B69DB9204527}.Debug|x64.Build.0 = Debug|Any CPU
+		{5C59B9C1-3AE7-4F3D-B307-B69DB9204527}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{5C59B9C1-3AE7-4F3D-B307-B69DB9204527}.Debug|x86.Build.0 = Debug|Any CPU
+		{5C59B9C1-3AE7-4F3D-B307-B69DB9204527}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5C59B9C1-3AE7-4F3D-B307-B69DB9204527}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5C59B9C1-3AE7-4F3D-B307-B69DB9204527}.Release|x64.ActiveCfg = Release|Any CPU
+		{5C59B9C1-3AE7-4F3D-B307-B69DB9204527}.Release|x64.Build.0 = Release|Any CPU
+		{5C59B9C1-3AE7-4F3D-B307-B69DB9204527}.Release|x86.ActiveCfg = Release|Any CPU
+		{5C59B9C1-3AE7-4F3D-B307-B69DB9204527}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -106,5 +122,6 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{5AB67CB3-132B-4F6D-AAA3-553ED6792179} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{3C8A289B-CB5E-466A-9FB5-80CA5B14E2E3} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{5C59B9C1-3AE7-4F3D-B307-B69DB9204527} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal

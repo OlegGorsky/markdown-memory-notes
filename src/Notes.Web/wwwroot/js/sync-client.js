@@ -1,6 +1,18 @@
 // WebSocket sync client
 let ws = null;
 
+export function getDefaultSyncUrl() {
+    const configured = window.localStorage.getItem('mmn-sync-url');
+    if (configured) return configured;
+
+    const host = window.location.hostname;
+    const isLocal = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+    if (isLocal) return 'ws://localhost:5199/sync';
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${window.location.host}/sync`;
+}
+
 export function connect(url, room, dotNetRef, onMessageMethod, onStatusMethod) {
     try {
         ws = new WebSocket(url);
@@ -11,6 +23,7 @@ export function connect(url, room, dotNetRef, onMessageMethod, onStatusMethod) {
 
     ws.onopen = () => {
         ws.send(JSON.stringify({ room }));
+        dotNetRef.invokeMethodAsync(onStatusMethod, 'connected');
     };
 
     ws.onmessage = (event) => {

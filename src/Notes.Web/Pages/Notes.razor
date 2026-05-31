@@ -20,6 +20,10 @@ else
                 <LucideIcon Name="list" />
             </button>
             <span class="vault-name">@Session.CurrentVault!.RootPath</span>
+            @if (_notice is not null)
+            {
+                <span class="sync-badge">@_notice</span>
+            }
             <button class="glass-btn glass-btn-accent glass-btn-sm" @onclick="NewNoteAsync"><LucideIcon Name="plus" /> Новая</button>
         </div>
 
@@ -231,6 +235,7 @@ else
     private string? _syncModalVault;
     private string? _activeVaultId;
     private string? _hoverVault;
+    private string? _notice;
     private string _syncCodeInput = "";
     private CancellationTokenSource? _autosaveCts;
     private List<string> _quietMemory = new();
@@ -243,17 +248,19 @@ else
         _vaults = await VaultMgr.ListAsync();
         if (Session.IsOpen && Session.CurrentVault is not null)
         {
-            _activeVaultId = EnsureVaultEntry(Session.CurrentVault.RootPath);
+            _activeVaultId = EnsureVaultEntry(
+                FS.CurrentVaultId ?? "v_" + Guid.NewGuid().ToString("N")[..8],
+                FS.CurrentVaultName ?? Path.GetFileName(Session.CurrentVault.RootPath.TrimEnd('/', '\\')),
+                Session.CurrentVault.RootPath);
             await ReloadNotesAsync();
         }
     }
 
-    private string EnsureVaultEntry(string path)
+    private string EnsureVaultEntry(string id, string name, string path)
     {
-        var name = Path.GetFileName(path.TrimEnd('/', '\\'));
-        var existing = _vaults.FirstOrDefault(v => v.Path == path);
+        var existing = _vaults.FirstOrDefault(v => v.Id == id || v.Path == path);
         if (existing is not null) return existing.Id;
-        var entry = new VaultEntry("v_" + Guid.NewGuid().ToString("N")[..8], name, path, null);
+        var entry = new VaultEntry(id, name, path, null);
         _vaults.Add(entry);
         _ = VaultMgr.SaveAsync(entry);
         return entry.Id;
@@ -261,7 +268,10 @@ else
 
     private async Task OnVaultOpened()
     {
-        _activeVaultId = EnsureVaultEntry(Session.CurrentVault!.RootPath);
+        _activeVaultId = EnsureVaultEntry(
+            FS.CurrentVaultId ?? "v_" + Guid.NewGuid().ToString("N")[..8],
+            FS.CurrentVaultName ?? Path.GetFileName(Session.CurrentVault!.RootPath.TrimEnd('/', '\\')),
+            Session.CurrentVault!.RootPath);
         _vaults = await VaultMgr.ListAsync();
         await ReloadNotesAsync();
         StateHasChanged();
@@ -320,12 +330,17 @@ else
         _editBody = "";
         try
         {
-            var name = Path.GetFileName(vault.Path.TrimEnd('/', '\\'));
-            await Session.OpenOrCreateAsync(name);
+            var handle = await FS.SwitchVaultAsync(vault.Id) ?? await FS.OpenVaultAsync(vault.Id);
+            if (handle is null) return;
+            await Session.OpenOrCreateAsync(handle.Path);
             _activeVaultId = vault.Id;
+            _notice = null;
             await ReloadNotesAsync();
         }
-        catch { }
+        catch
+        {
+            _notice = "Не удалось открыть папку.";
+        }
     }
 
     private async Task AddLocalVaultAsync()
@@ -333,16 +348,20 @@ else
         _addMenuOpen = false;
         try
         {
-            var name = await FS.OpenVaultAsync();
-            if (name is null) return;
+            var handle = await FS.OpenVaultAsync();
+            if (handle is null) return;
             _autosaveCts?.Cancel();
             await AutosaveAsync();
-            await Session.OpenOrCreateAsync(name);
-            _activeVaultId = EnsureVaultEntry(Session.CurrentVault!.RootPath);
+            await Session.OpenOrCreateAsync(handle.Path);
+            _activeVaultId = EnsureVaultEntry(handle.Id, handle.Name, Session.CurrentVault!.RootPath);
             _vaults = await VaultMgr.ListAsync();
+            _notice = null;
             await ReloadNotesAsync();
         }
-        catch { }
+        catch
+        {
+            _notice = "Не удалось открыть папку.";
+        }
     }
 
     private async Task ConnectNewVaultAsync()
@@ -354,24 +373,21 @@ else
 
         try
         {
-            var name = await FS.OpenVaultAsync();
-            if (name is null) return;
-            await Session.OpenOrCreateAsync(name);
-            var vault = new VaultEntry("v_" + Guid.NewGuid().ToString("N")[..8],
-                Path.GetFileName(name.TrimEnd('/', '\\')), Session.CurrentVault!.RootPath, code);
+            var handle = await FS.OpenVaultAsync();
+            if (handle is null) return;
+            await Session.OpenOrCreateAsync(handle.Path);
+            var vault = new VaultEntry(handle.Id, handle.Name, Session.CurrentVault!.RootPath, code);
             await VaultMgr.SaveAsync(vault);
             _vaults = await VaultMgr.ListAsync();
             _activeVaultId = vault.Id;
             await ReloadNotesAsync();
 
-            await Sync.ConnectAsync(new Uri("ws://localhost:5199/sync"), code,
-                async (path, content) =>
-                {
-                    await FS.WriteAllTextAsync(path, content);
-                    await InvokeAsync(ReloadNotesAsync);
-                });
+            await ConnectSyncRoomAsync(code);
         }
-        catch { }
+        catch
+        {
+            _notice = "Не удалось подключить папку.";
+        }
         StateHasChanged();
     }
 
@@ -409,14 +425,12 @@ else
         if (vault.SyncCode is null) return;
         try
         {
-            await Sync.ConnectAsync(new Uri("ws://localhost:5199/sync"), vault.SyncCode,
-                async (path, content) =>
-                {
-                    await FS.WriteAllTextAsync(path, content);
-                    await InvokeAsync(ReloadNotesAsync);
-                });
+            await ConnectSyncRoomAsync(vault.SyncCode);
         }
-        catch { }
+        catch
+        {
+            _notice = "Синхронизация недоступна.";
+        }
     }
 
     private async Task ConnectSyncAsync()
@@ -434,14 +448,12 @@ else
 
         try
         {
-            await Sync.ConnectAsync(new Uri("ws://localhost:5199/sync"), code,
-                async (path, content) =>
-                {
-                    await FS.WriteAllTextAsync(path, content);
-                    await InvokeAsync(ReloadNotesAsync);
-                });
+            await ConnectSyncRoomAsync(code);
         }
-        catch { }
+        catch
+        {
+            _notice = "Синхронизация недоступна.";
+        }
         StateHasChanged();
     }
 
@@ -454,24 +466,29 @@ else
 
     private async Task DeleteNoteAsync(Note note)
     {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", $"Удалить «{note.Title}»?");
+        if (!confirmed) return;
+
+        var relativePath = GetRelativePath(note.Path);
+        await Session.Notes.DeleteAsync(note);
+        if (Sync.IsConnected)
+        {
+            await Sync.SendDeleteAsync(relativePath);
+        }
+
         if (_selectedNote?.Id == note.Id)
         {
             _selectedNote = null;
             _editTitle = "";
             _editBody = "";
         }
-        _notes.Remove(note);
-        _noteTree = BuildTree(_notes);
-        StateHasChanged();
+
+        await ReloadNotesAsync();
     }
 
     private void OnFieldChanged()
     {
         ScheduleAutosave();
-        if (Sync.IsConnected && _selectedNote is not null)
-        {
-            _ = Sync.SendFileAsync(GetRelativePath(_selectedNote.Path), _editBody);
-        }
     }
 
     private void ScheduleAutosave()
@@ -494,7 +511,30 @@ else
         if (_selectedNote is null) return;
         var updated = _selectedNote with { Title = _editTitle, Body = _editBody };
         _selectedNote = await Session.Notes.SaveAsync(updated);
+        if (Sync.IsConnected)
+        {
+            var relativePath = GetRelativePath(_selectedNote.Path);
+            var content = await FS.ReadAllTextAsync(_selectedNote.Path);
+            await Sync.SendFileAsync(relativePath, content);
+        }
         await ReloadNotesAsync();
+    }
+
+    private async Task ConnectSyncRoomAsync(string code)
+    {
+        await Sync.ConnectAsync(code, async (path, content) =>
+        {
+            if (content is null)
+            {
+                await FS.DeleteFileAsync(path);
+            }
+            else
+            {
+                await FS.WriteAllTextAsync(path, content);
+            }
+
+            await InvokeAsync(ReloadNotesAsync);
+        });
     }
 
     private async Task SelectNoteAsync(Note note)

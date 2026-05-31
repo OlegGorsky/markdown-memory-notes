@@ -29,6 +29,16 @@ public sealed class PhysicalFileSystem : IFileSystem
         return Task.CompletedTask;
     }
 
+    public Task DeleteFileAsync(string path)
+    {
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
+
+        return Task.CompletedTask;
+    }
+
     public Task<IEnumerable<string>> EnumerateFilesAsync(string path, string searchPattern, SearchOption searchOption)
         => Task.FromResult(Directory.EnumerateFiles(path, searchPattern, searchOption));
 }
