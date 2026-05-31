@@ -1,0 +1,107 @@
+using Microsoft.Extensions.Logging.Abstractions;
+using Notes.Sync;
+using Xunit;
+
+namespace Notes.Sync.Tests;
+
+public sealed class SyncBroadcasterTests
+{
+    private const string Room = "RoomFanout-ABCDEFGHijkl";
+
+    [Fact]
+    public async Task BroadcastAsyncSendsToPeersExceptSender()
+    {
+        var registry = new SyncRoomRegistry<TestPeer>(maxRooms: 1, maxPeersPerRoom: 4);
+        var senderId = Guid.NewGuid();
+        var sender = new TestPeer();
+        var peer = new TestPeer();
+        registry.TryJoin(Room, senderId, sender);
+        registry.TryJoin(Room, Guid.NewGuid(), peer);
+
+        var broadcaster = new SyncBroadcaster<TestPeer>(registry, static peer => peer.IsOpen, SendAsync, maxFanoutConcurrency: 4);
+
+        await broadcaster.BroadcastAsync(Room, senderId, "payload", TimeSpan.FromSeconds(1), NullLogger.Instance);
+
+        Assert.Empty(sender.Messages);
+        Assert.Equal(["payload"], peer.Messages);
+    }
+
+    [Fact]
+    public async Task BroadcastAsyncRemovesClosedPeers()
+    {
+        var registry = new SyncRoomRegistry<TestPeer>(maxRooms: 1, maxPeersPerRoom: 4);
+        var senderId = Guid.NewGuid();
+        var closedPeerId = Guid.NewGuid();
+        registry.TryJoin(Room, senderId, new TestPeer());
+        registry.TryJoin(Room, closedPeerId, new TestPeer { IsOpen = false });
+
+        var broadcaster = new SyncBroadcaster<TestPeer>(registry, static peer => peer.IsOpen, SendAsync, maxFanoutConcurrency: 4);
+
+        await broadcaster.BroadcastAsync(Room, senderId, "payload", TimeSpan.FromSeconds(1), NullLogger.Instance);
+
+        Assert.DoesNotContain(registry.GetPeers(Room), peer => peer.Key == closedPeerId);
+    }
+
+    [Fact]
+    public async Task BroadcastAsyncBoundsConcurrentSends()
+    {
+        var registry = new SyncRoomRegistry<TestPeer>(maxRooms: 1, maxPeersPerRoom: 8);
+        var senderId = Guid.NewGuid();
+        registry.TryJoin(Room, senderId, new TestPeer());
+        for (var index = 0; index < 5; index++)
+        {
+            registry.TryJoin(Room, Guid.NewGuid(), new TestPeer());
+        }
+
+        var currentSends = 0;
+        var maxObservedSends = 0;
+        var broadcaster = new SyncBroadcaster<TestPeer>(
+            registry,
+            static peer => peer.IsOpen,
+            async (peer, payload, cancellationToken) =>
+            {
+                var current = Interlocked.Increment(ref currentSends);
+                UpdateMax(ref maxObservedSends, current);
+                try
+                {
+                    await Task.Delay(40, cancellationToken);
+                    peer.Messages.Add("sent");
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref currentSends);
+                }
+            },
+            maxFanoutConcurrency: 2);
+
+        await broadcaster.BroadcastAsync(Room, senderId, "payload", TimeSpan.FromSeconds(1), NullLogger.Instance);
+
+        Assert.Equal(2, maxObservedSends);
+        Assert.Equal(5, registry.GetPeers(Room).Count(peer => peer.Value.Messages.Count == 1));
+    }
+
+    private static Task SendAsync(TestPeer peer, string payload, CancellationToken cancellationToken)
+    {
+        peer.Messages.Add(payload);
+        return Task.CompletedTask;
+    }
+
+    private static void UpdateMax(ref int target, int value)
+    {
+        while (true)
+        {
+            var current = Volatile.Read(ref target);
+            if (value <= current ||
+                Interlocked.CompareExchange(ref target, value, current) == current)
+            {
+                return;
+            }
+        }
+    }
+
+    private sealed class TestPeer
+    {
+        public bool IsOpen { get; init; } = true;
+        public List<string> Messages { get; } = new();
+    }
+}

@@ -8,6 +8,11 @@ var builder = WebApplication.CreateBuilder(args);
 var options = SyncServerOptions.FromConfiguration(builder.Configuration);
 var app = builder.Build();
 var rooms = new SyncRoomRegistry<WebSocket>(options.MaxRooms, options.MaxPeersPerRoom);
+var broadcaster = new SyncBroadcaster<WebSocket>(
+    rooms,
+    static socket => socket.State is WebSocketState.Open,
+    SendSocketAsync,
+    options.MaxFanoutConcurrency);
 
 app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(30) });
 
@@ -72,7 +77,7 @@ app.Map("/sync", async (HttpContext context) =>
                 break;
             }
 
-            await BroadcastAsync(rooms, room, connectionId, message, options.SendTimeout, app.Logger);
+            await broadcaster.BroadcastAsync(room, connectionId, message, options.SendTimeout, app.Logger);
         }
     }
     catch (InvalidDataException exception)
@@ -116,7 +121,8 @@ app.MapGet("/health", () =>
         connections = stats.Connections,
         options.MaxPeersPerRoom,
         options.MaxMessageBytes,
-        options.MaxMessagesPerMinute
+        options.MaxMessagesPerMinute,
+        options.MaxFanoutConcurrency
     });
 });
 
@@ -162,39 +168,10 @@ static async Task<string?> ReceiveTextAsync(WebSocket ws, int maxBytes, Cancella
     }
 }
 
-static async Task BroadcastAsync(
-    SyncRoomRegistry<WebSocket> rooms,
-    string room,
-    Guid senderId,
-    string message,
-    TimeSpan sendTimeout,
-    ILogger logger)
+static Task SendSocketAsync(WebSocket socket, string message, CancellationToken cancellationToken)
 {
     var payload = Encoding.UTF8.GetBytes(message);
-    foreach (var peer in rooms.GetPeers(room))
-    {
-        if (peer.Key == senderId)
-        {
-            continue;
-        }
-
-        if (peer.Value.State is not WebSocketState.Open)
-        {
-            rooms.Leave(room, peer.Key);
-            continue;
-        }
-
-        using var timeout = new CancellationTokenSource(sendTimeout);
-        try
-        {
-            await peer.Value.SendAsync(payload, WebSocketMessageType.Text, true, timeout.Token);
-        }
-        catch (Exception exception) when (exception is WebSocketException or OperationCanceledException)
-        {
-            SyncLog.RemovingUnavailablePeer(logger, exception, room);
-            rooms.Leave(room, peer.Key);
-        }
-    }
+    return socket.SendAsync(payload, WebSocketMessageType.Text, true, cancellationToken);
 }
 
 static async Task CloseSafeAsync(WebSocket ws, WebSocketCloseStatus status, string description, CancellationToken cancellationToken)

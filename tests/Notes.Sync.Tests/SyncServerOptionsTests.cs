@@ -14,5 +14,6 @@ public sealed class SyncServerOptionsTests
         Assert.InRange(options.MaxPeersPerRoom, 1, 128);
         Assert.InRange(options.MaxMessageBytes, 1, 1024 * 1024);
         Assert.InRange(options.MaxMessagesPerMinute, 1, 1_000);
+        Assert.InRange(options.MaxFanoutConcurrency, 1, options.MaxPeersPerRoom);
     }
 }
