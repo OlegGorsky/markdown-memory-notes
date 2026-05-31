@@ -13,6 +13,8 @@ public sealed class SyncBroadcaster<TConnection>
     private readonly Func<TConnection, string, CancellationToken, Task> sendAsync;
     private readonly int maxFanoutConcurrency;
     private readonly SyncMetrics metrics;
+    private readonly Lock sendGateLock = new();
+    private readonly Dictionary<Guid, SendGate> sendGates = new();
 
     public SyncBroadcaster(
         SyncRoomRegistry<TConnection> rooms,
@@ -60,7 +62,7 @@ public sealed class SyncBroadcaster<TConnection>
             {
                 if (!isOpen(peer.Value))
                 {
-                    rooms.Leave(room, peer.Key);
+                    RemovePeer(room, peer.Key);
                     metrics.DeliveryFailed();
                     metrics.PeerRemoved();
                     Interlocked.Increment(ref failed);
@@ -68,23 +70,45 @@ public sealed class SyncBroadcaster<TConnection>
                 }
 
                 using var timeout = new CancellationTokenSource(sendTimeout);
+                var sendGate = GetReferencedSendGate(peer.Key);
                 try
                 {
-                    await sendAsync(peer.Value, message, timeout.Token);
+                    using (await sendGate.AcquireAsync(timeout.Token))
+                    {
+                        await sendAsync(peer.Value, message, timeout.Token);
+                    }
+
                     metrics.DeliverySucceeded();
                     Interlocked.Increment(ref succeeded);
                 }
                 catch (Exception exception) when (IsUnavailablePeerException(exception))
                 {
                     SyncLog.RemovingUnavailablePeer(logger, exception, room);
-                    rooms.Leave(room, peer.Key);
+                    RemovePeer(room, peer.Key);
                     metrics.DeliveryFailed();
                     metrics.PeerRemoved();
                     Interlocked.Increment(ref failed);
                 }
+                finally
+                {
+                    sendGate.ReleaseReference();
+                    TryRemoveForgottenGate(peer.Key, sendGate);
+                }
             });
 
         return new SyncBroadcastResult(peers.Length, succeeded, failed);
+    }
+
+    public void ForgetPeer(Guid connectionId)
+    {
+        lock (sendGateLock)
+        {
+            if (sendGates.TryGetValue(connectionId, out var sendGate))
+            {
+                sendGate.Forget();
+                TryRemoveForgottenGateNoLock(connectionId, sendGate);
+            }
+        }
     }
 
     private static bool IsUnavailablePeerException(Exception exception)
@@ -93,5 +117,102 @@ public sealed class SyncBroadcaster<TConnection>
             OperationCanceledException or
             InvalidOperationException or
             ObjectDisposedException;
+    }
+
+    private void RemovePeer(string room, Guid connectionId)
+    {
+        rooms.Leave(room, connectionId);
+        ForgetPeer(connectionId);
+    }
+
+    private void TryRemoveForgottenGate(Guid connectionId, SendGate sendGate)
+    {
+        lock (sendGateLock)
+        {
+            TryRemoveForgottenGateNoLock(connectionId, sendGate);
+        }
+    }
+
+    private void TryRemoveForgottenGateNoLock(Guid connectionId, SendGate sendGate)
+    {
+        if (sendGate.CanRemove &&
+            sendGates.TryGetValue(connectionId, out var current) &&
+            ReferenceEquals(current, sendGate))
+        {
+            sendGates.Remove(connectionId);
+        }
+    }
+
+    private SendGate GetReferencedSendGate(Guid connectionId)
+    {
+        lock (sendGateLock)
+        {
+            if (!sendGates.TryGetValue(connectionId, out var sendGate))
+            {
+                sendGate = new SendGate();
+                sendGates[connectionId] = sendGate;
+            }
+
+            sendGate.AddReference();
+            return sendGate;
+        }
+    }
+
+    private sealed class SendGate : IDisposable
+    {
+        private readonly SemaphoreSlim semaphore = new(1, 1);
+        private int references;
+        private int forgotten;
+
+        public bool CanRemove =>
+            Volatile.Read(ref forgotten) == 1 &&
+            Volatile.Read(ref references) == 0;
+
+        public void AddReference()
+        {
+            Interlocked.Increment(ref references);
+        }
+
+        public async Task<Lease> AcquireAsync(CancellationToken cancellationToken)
+        {
+            await semaphore.WaitAsync(cancellationToken);
+            return new Lease(this);
+        }
+
+        public void Forget()
+        {
+            Volatile.Write(ref forgotten, 1);
+        }
+
+        private void Release()
+        {
+            semaphore.Release();
+            ReleaseReference();
+        }
+
+        public void ReleaseReference()
+        {
+            Interlocked.Decrement(ref references);
+        }
+
+        public void Dispose()
+        {
+            semaphore.Dispose();
+        }
+
+        public readonly struct Lease : IDisposable
+        {
+            private readonly SendGate? gate;
+
+            public Lease(SendGate gate)
+            {
+                this.gate = gate;
+            }
+
+            public void Dispose()
+            {
+                gate?.Release();
+            }
+        }
     }
 }

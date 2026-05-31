@@ -197,6 +197,7 @@ async Task HandleSyncRequestAsync(HttpContext context)
         if (joined && room is not null)
         {
             await admissionCoordinator.PeerLeftAsync(room, connectionId, CancellationToken.None);
+            broadcaster.ForgetPeer(connectionId);
             await presenceCoordinator.PeerLeftAsync(room, connectionId, CancellationToken.None);
             await backplaneBridge.ReleaseIfRoomEmptyAsync(room);
             if (app.Logger.IsEnabled(LogLevel.Information))

@@ -119,6 +119,59 @@ public sealed class SyncBroadcasterTests
         Assert.Equal(5, registry.GetPeers(Room).Count(peer => peer.Value.Messages.Count == 1));
     }
 
+    [Fact]
+    public async Task BroadcastAsyncSerializesConcurrentSendsToSamePeer()
+    {
+        var registry = new SyncRoomRegistry<TestPeer>(maxRooms: 1, maxPeersPerRoom: 4);
+        var senderId = Guid.NewGuid();
+        var sharedPeer = new TestPeer();
+        var firstSendEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        registry.TryJoin(Room, senderId, new TestPeer());
+        registry.TryJoin(Room, Guid.NewGuid(), sharedPeer);
+        var broadcaster = new SyncBroadcaster<TestPeer>(
+            registry,
+            static peer => peer.IsOpen,
+            async (peer, payload, cancellationToken) =>
+            {
+                peer.EnterSend();
+                try
+                {
+                    if (ReferenceEquals(peer, sharedPeer))
+                    {
+                        firstSendEntered.TrySetResult();
+                        await Task.Delay(120, cancellationToken);
+                    }
+
+                    peer.Messages.Add(payload);
+                }
+                finally
+                {
+                    peer.LeaveSend();
+                }
+            },
+            maxFanoutConcurrency: 4,
+            new SyncMetrics());
+
+        var firstBroadcast = broadcaster.BroadcastAsync(
+            Room,
+            senderId,
+            "first",
+            TimeSpan.FromSeconds(2),
+            NullLogger.Instance);
+        await firstSendEntered.Task.WaitAsync(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+        var secondBroadcast = broadcaster.BroadcastAsync(
+            Room,
+            Guid.NewGuid(),
+            "second",
+            TimeSpan.FromSeconds(2),
+            NullLogger.Instance);
+
+        await Task.WhenAll(firstBroadcast, secondBroadcast);
+
+        Assert.Equal(1, sharedPeer.MaxObservedSends);
+        Assert.Equal(["first", "second"], sharedPeer.Messages);
+    }
+
     private static Task SendAsync(TestPeer peer, string payload, CancellationToken cancellationToken)
     {
         peer.Messages.Add(payload);
@@ -140,7 +193,22 @@ public sealed class SyncBroadcasterTests
 
     private sealed class TestPeer
     {
+        private int activeSends;
+        private int maxObservedSends;
+
         public bool IsOpen { get; init; } = true;
         public List<string> Messages { get; } = new();
+        public int MaxObservedSends => Volatile.Read(ref maxObservedSends);
+
+        public void EnterSend()
+        {
+            var current = Interlocked.Increment(ref activeSends);
+            UpdateMax(ref maxObservedSends, current);
+        }
+
+        public void LeaveSend()
+        {
+            Interlocked.Decrement(ref activeSends);
+        }
     }
 }
