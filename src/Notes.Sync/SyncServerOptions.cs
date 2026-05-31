@@ -12,7 +12,9 @@ public sealed record SyncServerOptions(
     int MaxFanoutConcurrency,
     TimeSpan SendTimeout,
     TimeSpan JoinTimeout,
-    IReadOnlyList<string> AllowedOrigins)
+    IReadOnlyList<string> AllowedOrigins,
+    IReadOnlyList<string> TrustedProxies,
+    IReadOnlyList<string> TrustedNetworks)
 {
     public static SyncServerOptions Default { get; } = new(
         MaxRooms: 10_000,
@@ -24,7 +26,9 @@ public sealed record SyncServerOptions(
         MaxFanoutConcurrency: 16,
         SendTimeout: TimeSpan.FromSeconds(5),
         JoinTimeout: TimeSpan.FromSeconds(10),
-        AllowedOrigins: []);
+        AllowedOrigins: [],
+        TrustedProxies: [],
+        TrustedNetworks: []);
 
     public static SyncServerOptions FromConfiguration(IConfiguration configuration)
     {
@@ -40,7 +44,9 @@ public sealed record SyncServerOptions(
             GetInt(configuration, "MMN_SYNC_MAX_FANOUT_CONCURRENCY", "Sync:MaxFanoutConcurrency", Default.MaxFanoutConcurrency, 1, maxPeersPerRoom),
             TimeSpan.FromSeconds(GetInt(configuration, "MMN_SYNC_SEND_TIMEOUT_SECONDS", "Sync:SendTimeoutSeconds", (int)Default.SendTimeout.TotalSeconds, 1, 60)),
             TimeSpan.FromSeconds(GetInt(configuration, "MMN_SYNC_JOIN_TIMEOUT_SECONDS", "Sync:JoinTimeoutSeconds", (int)Default.JoinTimeout.TotalSeconds, 1, 120)),
-            GetAllowedOrigins(configuration));
+            GetAllowedOrigins(configuration),
+            GetList(configuration, "MMN_SYNC_TRUSTED_PROXIES", "Sync:TrustedProxies"),
+            GetList(configuration, "MMN_SYNC_TRUSTED_NETWORKS", "Sync:TrustedNetworks"));
     }
 
     private static int GetInt(IConfiguration configuration, string environmentKey, string configKey, int fallback, int min, int max)
@@ -54,15 +60,20 @@ public sealed record SyncServerOptions(
         return Math.Clamp(value, min, max);
     }
 
-    private static string[] GetAllowedOrigins(IConfiguration configuration)
+    private static string[] GetList(IConfiguration configuration, string environmentKey, string configKey)
     {
-        var raw = Environment.GetEnvironmentVariable("MMN_SYNC_ALLOWED_ORIGINS") ?? configuration["Sync:AllowedOrigins"];
+        var raw = Environment.GetEnvironmentVariable(environmentKey) ?? configuration[configKey];
         if (string.IsNullOrWhiteSpace(raw))
         {
             return [];
         }
 
-        return raw.Split([',', ';'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+        return raw.Split([',', ';'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+    }
+
+    private static string[] GetAllowedOrigins(IConfiguration configuration)
+    {
+        return GetList(configuration, "MMN_SYNC_ALLOWED_ORIGINS", "Sync:AllowedOrigins")
             .Select(origin => SyncOriginPolicy.NormalizeConfiguredOrigin(origin) ?? origin)
             .ToArray();
     }

@@ -20,6 +20,8 @@ public sealed class SyncServerOptionsTests
         Assert.InRange(options.MaxConnectionsPerClient, 1, options.MaxConnections);
         Assert.InRange(options.JoinTimeout, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(30));
         Assert.Empty(options.AllowedOrigins);
+        Assert.Empty(options.TrustedProxies);
+        Assert.Empty(options.TrustedNetworks);
     }
 
     [Fact]
@@ -120,6 +122,35 @@ public sealed class SyncServerOptionsTests
         finally
         {
             Environment.SetEnvironmentVariable("MMN_SYNC_JOIN_TIMEOUT_SECONDS", previous);
+        }
+    }
+
+    [Fact]
+    public void FromConfigurationReadsTrustedForwardedHeaderSources()
+    {
+        var previousProxies = Environment.GetEnvironmentVariable("MMN_SYNC_TRUSTED_PROXIES");
+        var previousNetworks = Environment.GetEnvironmentVariable("MMN_SYNC_TRUSTED_NETWORKS");
+        try
+        {
+            Environment.SetEnvironmentVariable("MMN_SYNC_TRUSTED_PROXIES", null);
+            Environment.SetEnvironmentVariable("MMN_SYNC_TRUSTED_NETWORKS", null);
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Sync:TrustedProxies"] = "127.0.0.1; 10.0.0.5",
+                    ["Sync:TrustedNetworks"] = "10.10.0.0/16, 2001:db8::/32"
+                })
+                .Build();
+
+            var options = SyncServerOptions.FromConfiguration(configuration);
+
+            Assert.Equal(["127.0.0.1", "10.0.0.5"], options.TrustedProxies);
+            Assert.Equal(["10.10.0.0/16", "2001:db8::/32"], options.TrustedNetworks);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MMN_SYNC_TRUSTED_PROXIES", previousProxies);
+            Environment.SetEnvironmentVariable("MMN_SYNC_TRUSTED_NETWORKS", previousNetworks);
         }
     }
 }

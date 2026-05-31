@@ -18,6 +18,11 @@ var broadcaster = new SyncBroadcaster<WebSocket>(
     options.MaxFanoutConcurrency,
     metrics);
 
+if (SyncForwardedHeadersPolicy.IsConfigured(options))
+{
+    app.UseForwardedHeaders(SyncForwardedHeadersPolicy.Create(options));
+}
+
 app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(30) });
 
 app.Map("/sync", HandleSyncRequestAsync);
@@ -188,6 +193,8 @@ app.MapGet("/health", () =>
         options.MaxMessagesPerMinute,
         options.MaxFanoutConcurrency,
         joinTimeoutSeconds = options.JoinTimeout.TotalSeconds,
+        trustedProxiesConfigured = options.TrustedProxies.Count,
+        trustedNetworksConfigured = options.TrustedNetworks.Count,
         allowedOriginsConfigured = options.AllowedOrigins.Count
     });
 });
