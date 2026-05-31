@@ -33,7 +33,8 @@ public static class SyncRelayMessage
             }
 
             var type = typeElement.GetString();
-            if (!HasValidOptionalBaseHash(document.RootElement))
+            if (!HasValidOptionalBaseHash(document.RootElement) ||
+                !HasValidOptionalMessageId(document.RootElement))
             {
                 return false;
             }
@@ -59,6 +60,33 @@ public static class SyncRelayMessage
         }
     }
 
+    public static bool TryGetMessageId(string json, out string messageId)
+    {
+        messageId = string.Empty;
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (!TryGetProperty(document.RootElement, "messageId", out var messageIdElement) ||
+                messageIdElement.ValueKind is not JsonValueKind.String)
+            {
+                return false;
+            }
+
+            var parsedMessageId = messageIdElement.GetString() ?? string.Empty;
+            if (!SyncMessageId.IsValid(parsedMessageId))
+            {
+                return false;
+            }
+
+            messageId = parsedMessageId;
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
     private static bool HasValidOptionalBaseHash(JsonElement element)
     {
         if (!TryGetProperty(element, "baseHash", out var baseHashElement) ||
@@ -69,6 +97,18 @@ public static class SyncRelayMessage
 
         return baseHashElement.ValueKind is JsonValueKind.String &&
                SyncContentHash.IsValid(baseHashElement.GetString());
+    }
+
+    private static bool HasValidOptionalMessageId(JsonElement element)
+    {
+        if (!TryGetProperty(element, "messageId", out var messageIdElement) ||
+            messageIdElement.ValueKind is JsonValueKind.Null)
+        {
+            return true;
+        }
+
+        return messageIdElement.ValueKind is JsonValueKind.String &&
+               SyncMessageId.IsValid(messageIdElement.GetString());
     }
 
     private static bool TryGetProperty(JsonElement element, string name, out JsonElement property)

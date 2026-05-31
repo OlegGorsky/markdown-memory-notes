@@ -11,6 +11,7 @@ public sealed class SyncClientTests
     {
         var js = new CapturingJsRuntime();
         await using var client = new SyncClient(js);
+        await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "AbCdEfGhIjKlMnOpQrStUv", (_, _) => Task.CompletedTask);
         await client.OnStatus("connected");
         await client.OnMessage("""{"type":"presence","peerCount":2}""");
 
@@ -240,6 +241,47 @@ public sealed class SyncClientTests
     }
 
     [Fact]
+    public async Task SendFileAsyncRetriesAfterReconnectUntilAcked()
+    {
+        var js = new CapturingJsRuntime();
+        await using var client = new SyncClient(js);
+        await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "AbCdEfGhIjKlMnOpQrStUv", (_, _) => Task.CompletedTask);
+        await client.OnStatus("connected");
+        await client.OnMessage("""{"type":"presence","peerCount":2}""");
+
+        await client.SendFileAsync("notes/project.md", "# Waiting");
+        var firstMessage = Assert.Single(js.Module.SentMessages);
+        var messageId = ReadMessageId(firstMessage);
+
+        await client.OnStatus("disconnected");
+        await client.OnStatus("connected");
+        await client.OnMessage("""{"type":"presence","peerCount":2}""");
+
+        Assert.Equal(2, js.Module.SentMessages.Count);
+        Assert.Equal(messageId, ReadMessageId(js.Module.SentMessages[1]));
+    }
+
+    [Fact]
+    public async Task AckedMessageIsNotRetriedAfterReconnect()
+    {
+        var js = new CapturingJsRuntime();
+        await using var client = new SyncClient(js);
+        await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "AbCdEfGhIjKlMnOpQrStUv", (_, _) => Task.CompletedTask);
+        await client.OnStatus("connected");
+        await client.OnMessage("""{"type":"presence","peerCount":2}""");
+
+        await client.SendFileAsync("notes/project.md", "# Waiting");
+        var messageId = ReadMessageId(Assert.Single(js.Module.SentMessages));
+        await client.OnMessage($$"""{"type":"ack","messageId":"{{messageId}}"}""");
+
+        await client.OnStatus("disconnected");
+        await client.OnStatus("connected");
+        await client.OnMessage("""{"type":"presence","peerCount":2}""");
+
+        Assert.Single(js.Module.SentMessages);
+    }
+
+    [Fact]
     public async Task DisconnectAsyncClearsPeerPresence()
     {
         var js = new CapturingJsRuntime();
@@ -324,5 +366,11 @@ public sealed class SyncClientTests
         {
             return InvokeAsync<TValue>(identifier, args);
         }
+    }
+
+    private static string ReadMessageId(string json)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+        return document.RootElement.GetProperty("messageId").GetString() ?? string.Empty;
     }
 }

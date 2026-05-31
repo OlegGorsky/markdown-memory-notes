@@ -1,6 +1,7 @@
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using Notes.Core.Sync;
 using Notes.Sync;
 #pragma warning disable CA1812 // Instantiated via JSON deserialization
 
@@ -84,7 +85,16 @@ app.Map("/sync", async (HttpContext context) =>
             }
 
             metrics.MessageReceived();
-            await broadcaster.BroadcastAsync(room, connectionId, message, options.SendTimeout, app.Logger);
+            var result = await broadcaster.BroadcastAsync(room, connectionId, message, options.SendTimeout, app.Logger);
+            if (result.Succeeded > 0 && SyncRelayMessage.TryGetMessageId(message, out var messageId))
+            {
+                await SendSocketAsync(ws, SyncAckMessage.Create(messageId), context.RequestAborted);
+            }
+
+            if (result.Failed > 0 || result.Attempted == 0)
+            {
+                await SyncPresenceBroadcaster.BroadcastAsync(room, rooms, broadcaster, options.SendTimeout, app.Logger);
+            }
         }
     }
     catch (InvalidDataException exception)

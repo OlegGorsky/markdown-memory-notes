@@ -14,6 +14,7 @@ public sealed class SyncClient : IAsyncDisposable
     private readonly int maxQueuedOperations;
     private readonly Lock pendingGate = new();
     private readonly Dictionary<string, SyncMessage> pendingByPath = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> inFlightPathByMessageId = new(StringComparer.Ordinal);
     private readonly Queue<string> pendingOrder = new();
     private IJSObjectReference? _module;
     private DotNetObjectReference<SyncClient>? _selfRef;
@@ -90,7 +91,7 @@ public sealed class SyncClient : IAsyncDisposable
         }
 
         ValidateBaseHash(baseHash);
-        await SendOrQueueAsync(new SyncMessage("file", normalizedPath, content, baseHash));
+        await SendOrQueueAsync(new SyncMessage("file", normalizedPath, content, baseHash, SyncMessageId.New()));
     }
 
     public async Task SendDeleteAsync(string relativePath)
@@ -106,7 +107,7 @@ public sealed class SyncClient : IAsyncDisposable
         }
 
         ValidateBaseHash(baseHash);
-        await SendOrQueueAsync(new SyncMessage("delete", normalizedPath, null, baseHash));
+        await SendOrQueueAsync(new SyncMessage("delete", normalizedPath, null, baseHash, SyncMessageId.New()));
     }
 
     public async Task DisconnectAsync()
@@ -125,8 +126,23 @@ public sealed class SyncClient : IAsyncDisposable
         if (SyncPresenceMessage.TryParse(data, out var peerCount))
         {
             PeerCount = peerCount;
+            if (peerCount <= 1)
+            {
+                ClearInFlight();
+            }
+
             StateChanged?.Invoke(this, EventArgs.Empty);
             if (CanSendNow)
+            {
+                await FlushPendingAsync();
+            }
+
+            return;
+        }
+
+        if (SyncAckMessage.TryParse(data, out var ackedMessageId))
+        {
+            if (AcknowledgePending(ackedMessageId) && CanSendNow)
             {
                 await FlushPendingAsync();
             }
@@ -164,6 +180,11 @@ public sealed class SyncClient : IAsyncDisposable
     {
         IsConnected = status == "connected";
         PeerCount = IsConnected ? Math.Max(PeerCount, 1) : 0;
+        if (!IsConnected)
+        {
+            ClearInFlight();
+        }
+
         Status = status;
         StateChanged?.Invoke(this, EventArgs.Empty);
         if (CanSendNow)
@@ -197,24 +218,11 @@ public sealed class SyncClient : IAsyncDisposable
 
     private async Task SendOrQueueAsync(SyncMessage message)
     {
-        if (!CanSendNow)
-        {
-            QueuePending(message);
-            return;
-        }
+        QueuePending(message);
 
-        try
+        if (CanSendNow)
         {
-            if (!await TrySendNowAsync(message))
-            {
-                QueuePending(message);
-                MarkDisconnected();
-            }
-        }
-        catch (JSException)
-        {
-            QueuePending(message);
-            MarkDisconnected();
+            await FlushPendingAsync();
         }
     }
 
@@ -222,7 +230,7 @@ public sealed class SyncClient : IAsyncDisposable
     {
         while (CanSendNow)
         {
-            var message = DequeuePending();
+            var message = NextPendingToSend();
             if (message is null)
             {
                 return;
@@ -232,16 +240,15 @@ public sealed class SyncClient : IAsyncDisposable
             {
                 if (await TrySendNowAsync(message))
                 {
+                    MarkInFlight(message);
                     continue;
                 }
 
-                QueuePending(message);
                 MarkDisconnected();
                 return;
             }
             catch (JSException)
             {
-                QueuePending(message);
                 MarkDisconnected();
                 return;
             }
@@ -259,24 +266,34 @@ public sealed class SyncClient : IAsyncDisposable
     {
         IsConnected = false;
         PeerCount = 0;
+        ClearInFlight();
         Status = "disconnected";
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void QueuePending(SyncMessage message)
     {
-        if (_room is null || message.Path is null)
+        if (_room is null ||
+            message.Path is null ||
+            !SyncMessageId.IsValid(message.MessageId))
         {
             return;
         }
 
         lock (pendingGate)
         {
-            if (!pendingByPath.ContainsKey(message.Path))
+            if (pendingByPath.TryGetValue(message.Path, out var previousMessage))
+            {
+                RemoveInFlight(previousMessage.MessageId);
+            }
+            else
             {
                 while (pendingByPath.Count >= maxQueuedOperations && pendingOrder.TryDequeue(out var oldPath))
                 {
-                    pendingByPath.Remove(oldPath);
+                    if (pendingByPath.Remove(oldPath, out var removedMessage))
+                    {
+                        RemoveInFlight(removedMessage.MessageId);
+                    }
                 }
 
                 pendingOrder.Enqueue(message.Path);
@@ -286,13 +303,15 @@ public sealed class SyncClient : IAsyncDisposable
         }
     }
 
-    private SyncMessage? DequeuePending()
+    private SyncMessage? NextPendingToSend()
     {
         lock (pendingGate)
         {
-            while (pendingOrder.TryDequeue(out var path))
+            foreach (var path in pendingOrder)
             {
-                if (pendingByPath.Remove(path, out var message))
+                if (pendingByPath.TryGetValue(path, out var message) &&
+                    message.MessageId is not null &&
+                    !inFlightPathByMessageId.ContainsKey(message.MessageId))
                 {
                     return message;
                 }
@@ -302,11 +321,75 @@ public sealed class SyncClient : IAsyncDisposable
         }
     }
 
+    private void MarkInFlight(SyncMessage message)
+    {
+        var messageId = message.MessageId ?? string.Empty;
+        if (message.Path is null || !SyncMessageId.IsValid(messageId))
+        {
+            return;
+        }
+
+        lock (pendingGate)
+        {
+            if (pendingByPath.TryGetValue(message.Path, out var currentMessage) &&
+                string.Equals(currentMessage.MessageId, messageId, StringComparison.Ordinal))
+            {
+                inFlightPathByMessageId[messageId] = message.Path;
+            }
+        }
+    }
+
+    private bool AcknowledgePending(string messageId)
+    {
+        lock (pendingGate)
+        {
+            if (!inFlightPathByMessageId.Remove(messageId, out var path))
+            {
+                return false;
+            }
+
+            if (pendingByPath.TryGetValue(path, out var currentMessage) &&
+                string.Equals(currentMessage.MessageId, messageId, StringComparison.Ordinal))
+            {
+                pendingByPath.Remove(path);
+                RebuildPendingOrder();
+            }
+
+            return true;
+        }
+    }
+
+    private void ClearInFlight()
+    {
+        lock (pendingGate)
+        {
+            inFlightPathByMessageId.Clear();
+        }
+    }
+
+    private void RemoveInFlight(string? messageId)
+    {
+        if (messageId is not null)
+        {
+            inFlightPathByMessageId.Remove(messageId);
+        }
+    }
+
+    private void RebuildPendingOrder()
+    {
+        pendingOrder.Clear();
+        foreach (var path in pendingByPath.Keys)
+        {
+            pendingOrder.Enqueue(path);
+        }
+    }
+
     private void ClearPending()
     {
         lock (pendingGate)
         {
             pendingByPath.Clear();
+            inFlightPathByMessageId.Clear();
             pendingOrder.Clear();
         }
     }
@@ -319,6 +402,6 @@ public sealed class SyncClient : IAsyncDisposable
     }
 
 #pragma warning disable CA1812 // Instantiated via JSON
-    private sealed record SyncMessage(string Type, string? Path, string? Content, string? BaseHash);
+    private sealed record SyncMessage(string Type, string? Path, string? Content, string? BaseHash, string? MessageId);
 #pragma warning restore CA1812
 }

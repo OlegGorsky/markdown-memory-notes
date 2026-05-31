@@ -3,6 +3,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Notes.Sync;
 
+public sealed record SyncBroadcastResult(int Attempted, int Succeeded, int Failed);
+
 public sealed class SyncBroadcaster<TConnection>
     where TConnection : notnull
 {
@@ -32,7 +34,7 @@ public sealed class SyncBroadcaster<TConnection>
         this.metrics = metrics;
     }
 
-    public async Task BroadcastAsync(
+    public async Task<SyncBroadcastResult> BroadcastAsync(
         string room,
         Guid senderId,
         string message,
@@ -48,6 +50,8 @@ public sealed class SyncBroadcaster<TConnection>
             .Where(peer => peer.Key != senderId)
             .ToArray();
         metrics.DeliveryAttempted(peers.Length);
+        var succeeded = 0;
+        var failed = 0;
 
         await Parallel.ForEachAsync(
             peers,
@@ -58,6 +62,7 @@ public sealed class SyncBroadcaster<TConnection>
                 {
                     rooms.Leave(room, peer.Key);
                     metrics.PeerRemoved();
+                    Interlocked.Increment(ref failed);
                     return;
                 }
 
@@ -66,6 +71,7 @@ public sealed class SyncBroadcaster<TConnection>
                 {
                     await sendAsync(peer.Value, message, timeout.Token);
                     metrics.DeliverySucceeded();
+                    Interlocked.Increment(ref succeeded);
                 }
                 catch (Exception exception) when (exception is WebSocketException or OperationCanceledException)
                 {
@@ -73,7 +79,10 @@ public sealed class SyncBroadcaster<TConnection>
                     rooms.Leave(room, peer.Key);
                     metrics.DeliveryFailed();
                     metrics.PeerRemoved();
+                    Interlocked.Increment(ref failed);
                 }
             });
+
+        return new SyncBroadcastResult(peers.Length, succeeded, failed);
     }
 }

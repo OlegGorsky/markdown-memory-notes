@@ -21,10 +21,13 @@ public sealed class SyncBroadcasterTests
 
         var broadcaster = new SyncBroadcaster<TestPeer>(registry, static peer => peer.IsOpen, SendAsync, maxFanoutConcurrency: 4, metrics);
 
-        await broadcaster.BroadcastAsync(Room, senderId, "payload", TimeSpan.FromSeconds(1), NullLogger.Instance);
+        var result = await broadcaster.BroadcastAsync(Room, senderId, "payload", TimeSpan.FromSeconds(1), NullLogger.Instance);
 
         Assert.Empty(sender.Messages);
         Assert.Equal(["payload"], peer.Messages);
+        Assert.Equal(1, result.Attempted);
+        Assert.Equal(1, result.Succeeded);
+        Assert.Equal(0, result.Failed);
         Assert.Equal(1, metrics.Snapshot().DeliveriesAttempted);
         Assert.Equal(1, metrics.Snapshot().DeliveriesSucceeded);
     }
@@ -41,9 +44,12 @@ public sealed class SyncBroadcasterTests
 
         var broadcaster = new SyncBroadcaster<TestPeer>(registry, static peer => peer.IsOpen, SendAsync, maxFanoutConcurrency: 4, metrics);
 
-        await broadcaster.BroadcastAsync(Room, senderId, "payload", TimeSpan.FromSeconds(1), NullLogger.Instance);
+        var result = await broadcaster.BroadcastAsync(Room, senderId, "payload", TimeSpan.FromSeconds(1), NullLogger.Instance);
 
         Assert.DoesNotContain(registry.GetPeers(Room), peer => peer.Key == closedPeerId);
+        Assert.Equal(1, result.Attempted);
+        Assert.Equal(0, result.Succeeded);
+        Assert.Equal(1, result.Failed);
         Assert.Equal(1, metrics.Snapshot().PeersRemoved);
     }
 

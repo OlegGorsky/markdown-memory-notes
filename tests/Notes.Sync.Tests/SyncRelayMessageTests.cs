@@ -7,6 +7,7 @@ public sealed class SyncRelayMessageTests
 {
     [Theory]
     [InlineData("""{"type":"file","path":"notes/a.md","content":"# A"}""")]
+    [InlineData("""{"type":"file","path":"notes/a.md","content":"# A","messageId":"0123456789abcdef0123456789abcdef"}""")]
     [InlineData("""{"type":"file","path":"notes/a.md","content":"# A","baseHash":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}""")]
     [InlineData("""{"type":"delete","path":"inbox/2026-05-31.md","content":null}""")]
     [InlineData("""{"type":"delete","path":"inbox/2026-05-31.md","baseHash":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}""")]
@@ -32,9 +33,20 @@ public sealed class SyncRelayMessageTests
     [InlineData("""{"type":"file","path":"notes/a.md","content":null}""")]
     [InlineData("""{"type":"file","path":"notes/a.md","content":"# A","baseHash":"bad hash"}""")]
     [InlineData("""{"type":"delete","path":"notes/a.md","baseHash":"bad hash"}""")]
+    [InlineData("""{"type":"file","path":"notes/a.md","content":"# A","messageId":"bad"}""")]
+    [InlineData("""{"type":"ack","messageId":"0123456789abcdef0123456789abcdef"}""")]
     public void IsValidRejectsUnsafeMessages(string json)
     {
         Assert.False(SyncRelayMessage.IsValid(json, maxContentBytes: 1024));
+    }
+
+    [Fact]
+    public void TryGetMessageIdReadsValidMessageId()
+    {
+        var json = """{"type":"file","path":"notes/a.md","content":"# A","messageId":"0123456789abcdef0123456789abcdef"}""";
+
+        Assert.True(SyncRelayMessage.TryGetMessageId(json, out var messageId));
+        Assert.Equal("0123456789abcdef0123456789abcdef", messageId);
     }
 
     [Fact]
