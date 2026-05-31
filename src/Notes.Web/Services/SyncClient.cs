@@ -9,17 +9,22 @@ public sealed class SyncClient : IAsyncDisposable
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private const int DefaultMaxQueuedOperations = 256;
+    private static readonly TimeSpan DefaultAckTimeout = TimeSpan.FromSeconds(10);
 
     private readonly IJSRuntime js;
     private readonly int maxQueuedOperations;
+    private readonly TimeSpan ackTimeout;
     private readonly Lock pendingGate = new();
     private readonly Dictionary<string, SyncMessage> pendingByPath = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> inFlightPathByMessageId = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, CancellationTokenSource> inFlightTimeouts = new(StringComparer.Ordinal);
     private readonly Queue<string> pendingOrder = new();
+    private readonly SemaphoreSlim flushGate = new(1, 1);
     private IJSObjectReference? _module;
     private DotNetObjectReference<SyncClient>? _selfRef;
     private string? _room;
     private Func<string, string?, string?, Task>? _onFileReceived;
+    private bool disposed;
 
     public bool IsConnected { get; private set; }
     public int PeerCount { get; private set; }
@@ -33,11 +38,18 @@ public sealed class SyncClient : IAsyncDisposable
     }
 
     public SyncClient(IJSRuntime js, int maxQueuedOperations)
+        : this(js, maxQueuedOperations, DefaultAckTimeout)
+    {
+    }
+
+    public SyncClient(IJSRuntime js, int maxQueuedOperations, TimeSpan ackTimeout)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxQueuedOperations);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(ackTimeout, TimeSpan.Zero);
 
         this.js = js;
         this.maxQueuedOperations = maxQueuedOperations;
+        this.ackTimeout = ackTimeout;
     }
 
     public async Task ConnectAsync(string room, Func<string, string?, Task> onFileReceived)
@@ -116,6 +128,7 @@ public sealed class SyncClient : IAsyncDisposable
         await mod.InvokeVoidAsync("disconnect");
         IsConnected = false;
         PeerCount = 0;
+        ClearInFlight();
         Status = null;
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -228,6 +241,41 @@ public sealed class SyncClient : IAsyncDisposable
 
     private async Task FlushPendingAsync()
     {
+        if (disposed)
+        {
+            return;
+        }
+
+        try
+        {
+            await flushGate.WaitAsync();
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
+        try
+        {
+            if (!disposed)
+            {
+                await FlushPendingCoreAsync();
+            }
+        }
+        finally
+        {
+            try
+            {
+                flushGate.Release();
+            }
+            catch (ObjectDisposedException) when (disposed)
+            {
+            }
+        }
+    }
+
+    private async Task FlushPendingCoreAsync()
+    {
         while (CanSendNow)
         {
             var message = NextPendingToSend();
@@ -335,6 +383,7 @@ public sealed class SyncClient : IAsyncDisposable
                 string.Equals(currentMessage.MessageId, messageId, StringComparison.Ordinal))
             {
                 inFlightPathByMessageId[messageId] = message.Path;
+                StartAckTimeout(messageId);
             }
         }
     }
@@ -343,7 +392,7 @@ public sealed class SyncClient : IAsyncDisposable
     {
         lock (pendingGate)
         {
-            if (!inFlightPathByMessageId.Remove(messageId, out var path))
+            if (!RemoveInFlight(messageId, out var path))
             {
                 return false;
             }
@@ -363,7 +412,14 @@ public sealed class SyncClient : IAsyncDisposable
     {
         lock (pendingGate)
         {
+            foreach (var timeout in inFlightTimeouts.Values)
+            {
+                timeout.Cancel();
+                timeout.Dispose();
+            }
+
             inFlightPathByMessageId.Clear();
+            inFlightTimeouts.Clear();
         }
     }
 
@@ -371,7 +427,63 @@ public sealed class SyncClient : IAsyncDisposable
     {
         if (messageId is not null)
         {
-            inFlightPathByMessageId.Remove(messageId);
+            RemoveInFlight(messageId, out _);
+        }
+    }
+
+    private bool RemoveInFlight(string messageId, out string path)
+    {
+        var removed = inFlightPathByMessageId.Remove(messageId, out path!);
+        if (inFlightTimeouts.Remove(messageId, out var timeout))
+        {
+            timeout.Cancel();
+            timeout.Dispose();
+        }
+
+        return removed;
+    }
+
+    private void StartAckTimeout(string messageId)
+    {
+        if (inFlightTimeouts.Remove(messageId, out var previousTimeout))
+        {
+            previousTimeout.Cancel();
+            previousTimeout.Dispose();
+        }
+
+        var timeout = new CancellationTokenSource();
+        inFlightTimeouts[messageId] = timeout;
+        _ = ExpireInFlightAsync(messageId, timeout.Token);
+    }
+
+    private async Task ExpireInFlightAsync(string messageId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(ackTimeout, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        var shouldFlush = false;
+        lock (pendingGate)
+        {
+            if (inFlightPathByMessageId.Remove(messageId))
+            {
+                shouldFlush = true;
+            }
+
+            if (inFlightTimeouts.Remove(messageId, out var timeout))
+            {
+                timeout.Dispose();
+            }
+        }
+
+        if (shouldFlush && !disposed && CanSendNow)
+        {
+            await FlushPendingAsync();
         }
     }
 
@@ -390,13 +502,23 @@ public sealed class SyncClient : IAsyncDisposable
         {
             pendingByPath.Clear();
             inFlightPathByMessageId.Clear();
+            foreach (var timeout in inFlightTimeouts.Values)
+            {
+                timeout.Cancel();
+                timeout.Dispose();
+            }
+
+            inFlightTimeouts.Clear();
             pendingOrder.Clear();
         }
     }
 
     public async ValueTask DisposeAsync()
     {
+        disposed = true;
         if (IsConnected) await DisconnectAsync();
+        ClearInFlight();
+        flushGate.Dispose();
         _selfRef?.Dispose();
         if (_module is not null) await _module.DisposeAsync();
     }

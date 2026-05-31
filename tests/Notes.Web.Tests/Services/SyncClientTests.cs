@@ -282,6 +282,41 @@ public sealed class SyncClientTests
     }
 
     [Fact]
+    public async Task SendFileAsyncRetriesWhenAckTimeoutExpires()
+    {
+        var js = new CapturingJsRuntime();
+        await using var client = new SyncClient(js, maxQueuedOperations: 256, ackTimeout: TimeSpan.FromMilliseconds(20));
+        await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "AbCdEfGhIjKlMnOpQrStUv", (_, _) => Task.CompletedTask);
+        await client.OnStatus("connected");
+        await client.OnMessage("""{"type":"presence","peerCount":2}""");
+
+        await client.SendFileAsync("notes/project.md", "# Waiting");
+        var messageId = ReadMessageId(Assert.Single(js.Module.SentMessages));
+
+        await WaitUntilAsync(() => js.Module.SentMessages.Count >= 2);
+
+        Assert.Equal(messageId, ReadMessageId(js.Module.SentMessages[1]));
+        await client.OnMessage($$"""{"type":"ack","messageId":"{{messageId}}"}""");
+    }
+
+    [Fact]
+    public async Task AckedMessageIsNotRetriedAfterAckTimeout()
+    {
+        var js = new CapturingJsRuntime();
+        await using var client = new SyncClient(js, maxQueuedOperations: 256, ackTimeout: TimeSpan.FromMilliseconds(20));
+        await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "AbCdEfGhIjKlMnOpQrStUv", (_, _) => Task.CompletedTask);
+        await client.OnStatus("connected");
+        await client.OnMessage("""{"type":"presence","peerCount":2}""");
+
+        await client.SendFileAsync("notes/project.md", "# Waiting");
+        var messageId = ReadMessageId(Assert.Single(js.Module.SentMessages));
+        await client.OnMessage($$"""{"type":"ack","messageId":"{{messageId}}"}""");
+        await Task.Delay(80, TestContext.Current.CancellationToken);
+
+        Assert.Single(js.Module.SentMessages);
+    }
+
+    [Fact]
     public async Task DisconnectAsyncClearsPeerPresence()
     {
         var js = new CapturingJsRuntime();
@@ -372,5 +407,14 @@ public sealed class SyncClientTests
     {
         using var document = System.Text.Json.JsonDocument.Parse(json);
         return document.RootElement.GetProperty("messageId").GetString() ?? string.Empty;
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> predicate)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        while (!predicate())
+        {
+            await Task.Delay(10, timeout.Token);
+        }
     }
 }
