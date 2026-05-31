@@ -71,7 +71,8 @@ public static class SyncRelayMessage
         try
         {
             using var document = JsonDocument.Parse(json);
-            if (!TryGetSingleProperty(document.RootElement, "messageId", out var messageIdElement) ||
+            if (document.RootElement.ValueKind is not JsonValueKind.Object ||
+                !TryGetSingleProperty(document.RootElement, "messageId", out var messageIdElement) ||
                 messageIdElement.ValueKind is not JsonValueKind.String)
             {
                 return false;

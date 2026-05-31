@@ -49,6 +49,16 @@ public sealed class SyncRelayMessageTests
         Assert.Equal("0123456789abcdef0123456789abcdef", messageId);
     }
 
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("123")]
+    [InlineData("null")]
+    [InlineData(""""not-an-object"""")]
+    public void TryGetMessageIdRejectsNonObjectPayloads(string json)
+    {
+        Assert.False(SyncRelayMessage.TryGetMessageId(json, out _));
+    }
+
     [Fact]
     public void IsValidRejectsOversizedContent()
     {
