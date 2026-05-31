@@ -49,7 +49,7 @@ public sealed class BrowserFileSystem : IFileSystem, IAsyncDisposable
         if (full.StartsWith(vaultFullPath, StringComparison.Ordinal))
         {
             var rel = full[vaultFullPath.Length..].TrimStart('/', '\\');
-            return string.IsNullOrEmpty(rel) ? "." : rel;
+            return string.IsNullOrEmpty(rel) ? "" : rel;
         }
         return full;
     }

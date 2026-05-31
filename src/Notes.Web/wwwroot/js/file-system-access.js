@@ -72,37 +72,38 @@ function openDB() {
     });
 }
 
-/** Check if a relative path exists as directory */
-export async function directoryExists(relativePath) {
-    if (!rootHandle) return false;
+function resolvePath(rootHandle, relativePath) {
+    if (!relativePath) return rootHandle;
     const parts = relativePath.split('/').filter(p => p);
     let current = rootHandle;
     for (const part of parts) {
-        try {
-            current = await current.getDirectoryHandle(part);
-        } catch {
-            return false;
-        }
+        current = current.getDirectoryHandle(part);
     }
-    return true;
+    return current;
+}
+
+/** Check if a relative path exists as directory */
+export async function directoryExists(relativePath) {
+    if (!rootHandle) return false;
+    if (!relativePath) return true;
+    try {
+        await resolvePath(rootHandle, relativePath);
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 /** Check if a relative path exists as file */
 export async function fileExists(relativePath) {
     if (!rootHandle) return false;
+    if (!relativePath) return false;
     const parts = relativePath.split('/').filter(p => p);
     if (parts.length === 0) return false;
     const fileName = parts.pop();
-    let current = rootHandle;
-    for (const part of parts) {
-        try {
-            current = await current.getDirectoryHandle(part);
-        } catch {
-            return false;
-        }
-    }
     try {
-        await current.getFileHandle(fileName);
+        const dir = parts.length > 0 ? await resolvePath(rootHandle, parts.join('/')) : rootHandle;
+        await dir.getFileHandle(fileName);
         return true;
     } catch {
         return false;
@@ -111,7 +112,7 @@ export async function fileExists(relativePath) {
 
 /** Create a directory relative to root */
 export async function createDirectory(relativePath) {
-    if (!rootHandle) return;
+    if (!rootHandle || !relativePath) return;
     const parts = relativePath.split('/').filter(p => p);
     let current = rootHandle;
     for (const part of parts) {
@@ -122,13 +123,12 @@ export async function createDirectory(relativePath) {
 /** Read entire file content as text */
 export async function readAllText(relativePath) {
     if (!rootHandle) throw new Error('No vault opened');
+    if (!relativePath) throw new Error('Invalid path');
     const parts = relativePath.split('/').filter(p => p);
+    if (parts.length === 0) throw new Error('Invalid path');
     const fileName = parts.pop();
-    let current = rootHandle;
-    for (const part of parts) {
-        current = await current.getDirectoryHandle(part);
-    }
-    const fileHandle = await current.getFileHandle(fileName);
+    const dir = parts.length > 0 ? await resolvePath(rootHandle, parts.join('/')) : rootHandle;
+    const fileHandle = await dir.getFileHandle(fileName);
     const file = await fileHandle.getFile();
     return await file.text();
 }
@@ -136,7 +136,9 @@ export async function readAllText(relativePath) {
 /** Write text content to file */
 export async function writeAllText(relativePath, contents) {
     if (!rootHandle) throw new Error('No vault opened');
+    if (!relativePath) throw new Error('Invalid path');
     const parts = relativePath.split('/').filter(p => p);
+    if (parts.length === 0) throw new Error('Invalid path');
     const fileName = parts.pop();
     let current = rootHandle;
     for (const part of parts) {
@@ -152,7 +154,7 @@ export async function writeAllText(relativePath, contents) {
 export async function enumerateFiles(dirPath, pattern, recurse) {
     if (!rootHandle) return [];
     const results = [];
-    const parts = dirPath.split('/').filter(p => p);
+    const parts = (dirPath || '').split('/').filter(p => p);
     let current = rootHandle;
     for (const part of parts) {
         try {
