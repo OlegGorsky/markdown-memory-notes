@@ -13,12 +13,14 @@ public sealed class SyncClientTests
         await using var client = new SyncClient(js);
         await client.OnStatus("connected");
 
-        await client.SendFileAsync("""notes\project.md""", "# Project");
+        var baseHash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        await client.SendFileAsync("""notes\project.md""", "# Project", baseHash);
 
         var message = Assert.Single(js.Module.SentMessages);
         Assert.Contains("\"type\":\"file\"", message, StringComparison.Ordinal);
         Assert.Contains("\"path\":\"notes/project.md\"", message, StringComparison.Ordinal);
         Assert.Contains("\"content\":\"# Project\"", message, StringComparison.Ordinal);
+        Assert.Contains("\"baseHash\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"", message, StringComparison.Ordinal);
         Assert.DoesNotContain("\"Type\"", message, StringComparison.Ordinal);
     }
 
@@ -26,18 +28,19 @@ public sealed class SyncClientTests
     public async Task OnMessageAcceptsCamelCaseProtocol()
     {
         await using var client = new SyncClient(new CapturingJsRuntime());
-        var received = new List<(string Path, string? Content)>();
-        await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "AbCdEfGhIjKlMnOpQrStUv", (path, content) =>
+        var received = new List<(string Path, string? Content, string? BaseHash)>();
+        await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "AbCdEfGhIjKlMnOpQrStUv", (path, content, baseHash) =>
         {
-            received.Add((path, content));
+            received.Add((path, content, baseHash));
             return Task.CompletedTask;
         });
 
-        client.OnMessage("""{"type":"file","path":"notes/project.md","content":"# Project"}""");
+        client.OnMessage("""{"type":"file","path":"notes/project.md","content":"# Project","baseHash":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}""");
 
         var item = Assert.Single(received);
         Assert.Equal("notes/project.md", item.Path);
         Assert.Equal("# Project", item.Content);
+        Assert.Equal("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", item.BaseHash);
     }
 
     [Fact]
@@ -51,6 +54,36 @@ public sealed class SyncClientTests
 
         Assert.Equal("room", exception.ParamName);
         Assert.Equal(0, js.Module.ConnectCalls);
+    }
+
+    [Fact]
+    public async Task SendFileAsyncRejectsInvalidBaseHash()
+    {
+        var js = new CapturingJsRuntime();
+        await using var client = new SyncClient(js);
+        await client.OnStatus("connected");
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
+            client.SendFileAsync("notes/project.md", "# Project", "bad hash"));
+
+        Assert.Equal("baseHash", exception.ParamName);
+        Assert.Empty(js.Module.SentMessages);
+    }
+
+    [Fact]
+    public async Task OnMessageIgnoresInvalidBaseHash()
+    {
+        await using var client = new SyncClient(new CapturingJsRuntime());
+        var received = new List<(string Path, string? Content, string? BaseHash)>();
+        await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "AbCdEfGhIjKlMnOpQrStUv", (path, content, baseHash) =>
+        {
+            received.Add((path, content, baseHash));
+            return Task.CompletedTask;
+        });
+
+        client.OnMessage("""{"type":"file","path":"notes/project.md","content":"# Project","baseHash":"bad hash"}""");
+
+        Assert.Empty(received);
     }
 
     [Fact]

@@ -3,6 +3,7 @@ using Notes.Core.Inbox;
 using Notes.Core.Memory;
 using Notes.Core.Notes;
 using Notes.Core.Search;
+using Notes.Core.Sync;
 using Notes.Core.Trails;
 using Notes.Core.Vault;
 
@@ -22,6 +23,7 @@ public sealed class WebVaultSession
         Trails = new TrailRepository(fileSystem);
         Fragments = new FragmentService();
         QuietMemory = new QuietMemoryService(searchIndex);
+        SyncChanges = new SyncChangeApplier(fileSystem);
     }
 
     public VaultService VaultService { get; }
@@ -30,6 +32,7 @@ public sealed class WebVaultSession
     public TrailRepository Trails { get; }
     public FragmentService Fragments { get; }
     public QuietMemoryService QuietMemory { get; }
+    public SyncChangeApplier SyncChanges { get; }
 
     public Vault? CurrentVault { get; private set; }
     public bool IsOpen => CurrentVault is not null;

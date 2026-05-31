@@ -18,7 +18,7 @@ public sealed class SyncClient : IAsyncDisposable
     private IJSObjectReference? _module;
     private DotNetObjectReference<SyncClient>? _selfRef;
     private string? _room;
-    private Func<string, string?, Task>? _onFileReceived;
+    private Func<string, string?, string?, Task>? _onFileReceived;
 
     public bool IsConnected { get; private set; }
     public string? Status { get; private set; }
@@ -40,6 +40,11 @@ public sealed class SyncClient : IAsyncDisposable
 
     public async Task ConnectAsync(string room, Func<string, string?, Task> onFileReceived)
     {
+        await ConnectAsync(room, (path, content, _) => onFileReceived(path, content));
+    }
+
+    public async Task ConnectAsync(string room, Func<string, string?, string?, Task> onFileReceived)
+    {
         ValidateRoom(room);
         var mod = await ModuleAsync();
         var serverUrl = await mod.InvokeAsync<string>("getDefaultSyncUrl");
@@ -47,6 +52,11 @@ public sealed class SyncClient : IAsyncDisposable
     }
 
     public async Task ConnectAsync(Uri serverUrl, string room, Func<string, string?, Task> onFileReceived)
+    {
+        await ConnectAsync(serverUrl, room, (path, content, _) => onFileReceived(path, content));
+    }
+
+    public async Task ConnectAsync(Uri serverUrl, string room, Func<string, string?, string?, Task> onFileReceived)
     {
         ValidateRoom(room);
         if (!string.Equals(_room, room, StringComparison.Ordinal))
@@ -64,22 +74,34 @@ public sealed class SyncClient : IAsyncDisposable
 
     public async Task SendFileAsync(string relativePath, string content)
     {
-        if (!VaultRelativePath.TryNormalizeMarkdownContentPath(relativePath, out var normalizedPath))
-        {
-            throw new ArgumentException("Sync path is outside supported Markdown content.", nameof(relativePath));
-        }
-
-        await SendOrQueueAsync(new SyncMessage("file", normalizedPath, content));
+        await SendFileAsync(relativePath, content, baseHash: null);
     }
 
-    public async Task SendDeleteAsync(string relativePath)
+    public async Task SendFileAsync(string relativePath, string content, string? baseHash)
     {
         if (!VaultRelativePath.TryNormalizeMarkdownContentPath(relativePath, out var normalizedPath))
         {
             throw new ArgumentException("Sync path is outside supported Markdown content.", nameof(relativePath));
         }
 
-        await SendOrQueueAsync(new SyncMessage("delete", normalizedPath, null));
+        ValidateBaseHash(baseHash);
+        await SendOrQueueAsync(new SyncMessage("file", normalizedPath, content, baseHash));
+    }
+
+    public async Task SendDeleteAsync(string relativePath)
+    {
+        await SendDeleteAsync(relativePath, baseHash: null);
+    }
+
+    public async Task SendDeleteAsync(string relativePath, string? baseHash)
+    {
+        if (!VaultRelativePath.TryNormalizeMarkdownContentPath(relativePath, out var normalizedPath))
+        {
+            throw new ArgumentException("Sync path is outside supported Markdown content.", nameof(relativePath));
+        }
+
+        ValidateBaseHash(baseHash);
+        await SendOrQueueAsync(new SyncMessage("delete", normalizedPath, null, baseHash));
     }
 
     public async Task DisconnectAsync()
@@ -96,18 +118,23 @@ public sealed class SyncClient : IAsyncDisposable
         try
         {
             var msg = JsonSerializer.Deserialize<SyncMessage>(data, JsonOptions);
+            if (msg?.BaseHash is not null && !SyncContentHash.IsValid(msg.BaseHash))
+            {
+                return;
+            }
+
             if (msg?.Type == "file" &&
                 msg.Path is not null &&
                 msg.Content is not null &&
                 VaultRelativePath.TryNormalizeMarkdownContentPath(msg.Path, out var filePath))
             {
-                _ = _onFileReceived?.Invoke(filePath, msg.Content);
+                _ = _onFileReceived?.Invoke(filePath, msg.Content, msg.BaseHash);
             }
             else if (msg?.Type == "delete" &&
                      msg.Path is not null &&
                      VaultRelativePath.TryNormalizeMarkdownContentPath(msg.Path, out var deletePath))
             {
-                _ = _onFileReceived?.Invoke(deletePath, null);
+                _ = _onFileReceived?.Invoke(deletePath, null, msg.BaseHash);
             }
         }
         catch (JsonException) { }
@@ -135,6 +162,14 @@ public sealed class SyncClient : IAsyncDisposable
         if (!SyncPairingCode.IsValid(room))
         {
             throw new ArgumentException("Sync room code is not a valid pairing code.", nameof(room));
+        }
+    }
+
+    private static void ValidateBaseHash(string? baseHash)
+    {
+        if (baseHash is not null && !SyncContentHash.IsValid(baseHash))
+        {
+            throw new ArgumentException("Sync base hash is not valid.", nameof(baseHash));
         }
     }
 
@@ -247,6 +282,6 @@ public sealed class SyncClient : IAsyncDisposable
     }
 
 #pragma warning disable CA1812 // Instantiated via JSON
-    private sealed record SyncMessage(string Type, string? Path, string? Content);
+    private sealed record SyncMessage(string Type, string? Path, string? Content, string? BaseHash);
 #pragma warning restore CA1812
 }

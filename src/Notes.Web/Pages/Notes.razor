@@ -488,10 +488,11 @@ else
         if (!confirmed) return;
 
         var relativePath = GetRelativePath(note.Path);
+        var baseHash = CanSendForActiveVault ? await TryReadContentHashAsync(note.Path) : null;
         await Session.Notes.DeleteAsync(note);
         if (CanSendForActiveVault)
         {
-            await Sync.SendDeleteAsync(relativePath);
+            await Sync.SendDeleteAsync(relativePath, baseHash);
         }
 
         if (_selectedNote?.Id == note.Id)
@@ -527,32 +528,51 @@ else
     private async Task AutosaveAsync()
     {
         if (_selectedNote is null) return;
+        var baseHash = CanSendForActiveVault ? await TryReadContentHashAsync(_selectedNote.Path) : null;
         var updated = _selectedNote with { Title = _editTitle, Body = _editBody };
         _selectedNote = await Session.Notes.SaveAsync(updated);
         if (CanSendForActiveVault)
         {
             var relativePath = GetRelativePath(_selectedNote.Path);
             var content = await FS.ReadAllTextAsync(_selectedNote.Path);
-            await Sync.SendFileAsync(relativePath, content);
+            await Sync.SendFileAsync(relativePath, content, baseHash);
         }
         await ReloadNotesAsync();
     }
 
     private async Task ConnectSyncRoomAsync(string code)
     {
-        await Sync.ConnectAsync(code, async (path, content) =>
+        await Sync.ConnectAsync(code, async (path, content, baseHash) =>
         {
-            if (content is null)
-            {
-                await FS.DeleteFileAsync(path);
-            }
-            else
-            {
-                await FS.WriteAllTextAsync(path, content);
-            }
+            var result = content is null
+                ? await Session.SyncChanges.ApplyDeleteAsync(path, baseHash)
+                : await Session.SyncChanges.ApplyFileAsync(path, content, baseHash);
 
+            if (result is global::Notes.Core.Sync.SyncApplyResult.ConflictSaved or
+                global::Notes.Core.Sync.SyncApplyResult.ConflictSkipped)
+            {
+                _notice = "Есть конфликт синхронизации.";
+            }
             await InvokeAsync(ReloadNotesAsync);
         });
+    }
+
+    private async Task<string?> TryReadContentHashAsync(string path)
+    {
+        try
+        {
+            if (!await FS.FileExistsAsync(path))
+            {
+                return null;
+            }
+
+            var content = await FS.ReadAllTextAsync(path);
+            return global::Notes.Core.Sync.SyncContentHash.Compute(content);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private bool CanSendForActiveVault

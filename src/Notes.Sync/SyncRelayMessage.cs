@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using Notes.Core.Files;
+using Notes.Core.Sync;
 
 namespace Notes.Sync;
 
@@ -32,6 +33,11 @@ public static class SyncRelayMessage
             }
 
             var type = typeElement.GetString();
+            if (!HasValidOptionalBaseHash(document.RootElement))
+            {
+                return false;
+            }
+
             if (type == "delete")
             {
                 return true;
@@ -51,6 +57,18 @@ public static class SyncRelayMessage
         {
             return false;
         }
+    }
+
+    private static bool HasValidOptionalBaseHash(JsonElement element)
+    {
+        if (!TryGetProperty(element, "baseHash", out var baseHashElement) ||
+            baseHashElement.ValueKind is JsonValueKind.Null)
+        {
+            return true;
+        }
+
+        return baseHashElement.ValueKind is JsonValueKind.String &&
+               SyncContentHash.IsValid(baseHashElement.GetString());
     }
 
     private static bool TryGetProperty(JsonElement element, string name, out JsonElement property)
