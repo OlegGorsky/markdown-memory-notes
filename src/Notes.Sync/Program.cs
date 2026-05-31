@@ -17,6 +17,14 @@ var broadcaster = new SyncBroadcaster<WebSocket>(
     SendSocketAsync,
     options.MaxFanoutConcurrency,
     metrics);
+await using var backplane = await SyncBackplaneFactory.CreateAsync(options, app.Logger);
+using var backplaneBridge = new SyncBackplaneBridge<WebSocket>(
+    options.InstanceId,
+    rooms,
+    broadcaster,
+    backplane,
+    options.SendTimeout,
+    app.Logger);
 
 if (SyncForwardedHeadersPolicy.IsConfigured(options))
 {
@@ -99,6 +107,7 @@ async Task HandleSyncRequestAsync(HttpContext context)
             SyncLog.PeerConnected(app.Logger, room, rooms.Stats.Connections);
         }
 
+        await backplaneBridge.EnsureSubscribedAsync(room, context.RequestAborted);
         await SyncPresenceBroadcaster.BroadcastAsync(room, rooms, broadcaster, options.SendTimeout, app.Logger);
         var rateLimit = new SyncRateLimit(options.MaxMessagesPerMinute, TimeSpan.FromMinutes(1));
 
@@ -126,7 +135,9 @@ async Task HandleSyncRequestAsync(HttpContext context)
 
             metrics.MessageReceived();
             var result = await broadcaster.BroadcastAsync(room, connectionId, message, options.SendTimeout, app.Logger);
-            if (result.Succeeded > 0 && SyncRelayMessage.TryGetMessageId(message, out var messageId))
+            var backplaneResult = await backplaneBridge.PublishAsync(room, connectionId, message, context.RequestAborted);
+            if ((result.Succeeded > 0 || backplaneResult.RemoteSubscribers > 0) &&
+                SyncRelayMessage.TryGetMessageId(message, out var messageId))
             {
                 await SendSocketAsync(ws, SyncAckMessage.Create(messageId), context.RequestAborted);
             }
@@ -169,6 +180,7 @@ async Task HandleSyncRequestAsync(HttpContext context)
         {
             rooms.Leave(room, connectionId);
             await SyncPresenceBroadcaster.BroadcastAsync(room, rooms, broadcaster, options.SendTimeout, app.Logger);
+            await backplaneBridge.ReleaseIfRoomEmptyAsync(room);
             if (app.Logger.IsEnabled(LogLevel.Information))
             {
                 SyncLog.PeerDisconnected(app.Logger, room, rooms.Stats.Connections);
@@ -194,6 +206,9 @@ app.MapGet("/health", () =>
         options.MaxMessageBytes,
         options.MaxMessagesPerMinute,
         options.MaxFanoutConcurrency,
+        backplaneEnabled = backplane.IsEnabled,
+        options.BackplaneChannelPrefix,
+        options.InstanceId,
         joinTimeoutSeconds = options.JoinTimeout.TotalSeconds,
         trustedProxiesConfigured = options.TrustedProxies.Count,
         trustedNetworksConfigured = options.TrustedNetworks.Count,
@@ -206,7 +221,7 @@ app.MapGet("/metrics", () =>
     return Results.Text(metrics.RenderPrometheus(rooms.Stats, connections.ActiveConnections), "text/plain; version=0.0.4");
 });
 
-app.Run(Environment.GetEnvironmentVariable("MMN_SYNC_URL") ?? "http://0.0.0.0:5199");
+await app.RunAsync(Environment.GetEnvironmentVariable("MMN_SYNC_URL") ?? "http://0.0.0.0:5199");
 
 static async Task<string?> ReceiveTextAsync(WebSocket ws, int maxBytes, CancellationToken cancellationToken)
 {

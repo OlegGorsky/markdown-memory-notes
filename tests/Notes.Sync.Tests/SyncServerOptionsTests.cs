@@ -22,6 +22,9 @@ public sealed class SyncServerOptionsTests
         Assert.Empty(options.AllowedOrigins);
         Assert.Empty(options.TrustedProxies);
         Assert.Empty(options.TrustedNetworks);
+        Assert.Null(options.BackplaneRedisConnectionString);
+        Assert.False(string.IsNullOrWhiteSpace(options.BackplaneChannelPrefix));
+        Assert.False(string.IsNullOrWhiteSpace(options.InstanceId));
     }
 
     [Fact]
@@ -151,6 +154,40 @@ public sealed class SyncServerOptionsTests
         {
             Environment.SetEnvironmentVariable("MMN_SYNC_TRUSTED_PROXIES", previousProxies);
             Environment.SetEnvironmentVariable("MMN_SYNC_TRUSTED_NETWORKS", previousNetworks);
+        }
+    }
+
+    [Fact]
+    public void FromConfigurationReadsBackplaneSettings()
+    {
+        var previousRedis = Environment.GetEnvironmentVariable("MMN_SYNC_BACKPLANE_REDIS");
+        var previousPrefix = Environment.GetEnvironmentVariable("MMN_SYNC_BACKPLANE_CHANNEL_PREFIX");
+        var previousInstance = Environment.GetEnvironmentVariable("MMN_SYNC_INSTANCE_ID");
+        try
+        {
+            Environment.SetEnvironmentVariable("MMN_SYNC_BACKPLANE_REDIS", null);
+            Environment.SetEnvironmentVariable("MMN_SYNC_BACKPLANE_CHANNEL_PREFIX", null);
+            Environment.SetEnvironmentVariable("MMN_SYNC_INSTANCE_ID", null);
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Sync:BackplaneRedis"] = "localhost:6379,abortConnect=false",
+                    ["Sync:BackplaneChannelPrefix"] = "notes-prod",
+                    ["Sync:InstanceId"] = "relay-a"
+                })
+                .Build();
+
+            var options = SyncServerOptions.FromConfiguration(configuration);
+
+            Assert.Equal("localhost:6379,abortConnect=false", options.BackplaneRedisConnectionString);
+            Assert.Equal("notes-prod", options.BackplaneChannelPrefix);
+            Assert.Equal("relay-a", options.InstanceId);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MMN_SYNC_BACKPLANE_REDIS", previousRedis);
+            Environment.SetEnvironmentVariable("MMN_SYNC_BACKPLANE_CHANNEL_PREFIX", previousPrefix);
+            Environment.SetEnvironmentVariable("MMN_SYNC_INSTANCE_ID", previousInstance);
         }
     }
 }

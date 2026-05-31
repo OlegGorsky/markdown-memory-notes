@@ -24,4 +24,16 @@ public static partial class SyncLog
 
     [LoggerMessage(EventId = 7, Level = LogLevel.Debug, Message = "Removing unavailable sync peer. Room={Room}")]
     public static partial void RemovingUnavailablePeer(ILogger logger, Exception exception, string room);
+
+    [LoggerMessage(EventId = 8, Level = LogLevel.Warning, Message = "Sync backplane publish failed. Room={Room}")]
+    public static partial void BackplanePublishFailed(ILogger logger, Exception exception, string room);
+
+    [LoggerMessage(EventId = 9, Level = LogLevel.Warning, Message = "Invalid sync backplane payload. Room={Room}")]
+    public static partial void BackplaneInvalidPayload(ILogger logger, Exception exception, string room);
+
+    [LoggerMessage(EventId = 10, Level = LogLevel.Warning, Message = "Sync backplane receive failed. Room={Room}")]
+    public static partial void BackplaneReceiveFailed(ILogger logger, Exception exception, string room);
+
+    [LoggerMessage(EventId = 11, Level = LogLevel.Warning, Message = "Sync backplane subscribe failed. Room={Room}")]
+    public static partial void BackplaneSubscribeFailed(ILogger logger, Exception exception, string room);
 }

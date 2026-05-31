@@ -11,4 +11,8 @@
     <ProjectReference Include="../Notes.Core/Notes.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="StackExchange.Redis" Version="2.13.17" />
+  </ItemGroup>
+
 </Project>

@@ -14,7 +14,10 @@ public sealed record SyncServerOptions(
     TimeSpan JoinTimeout,
     IReadOnlyList<string> AllowedOrigins,
     IReadOnlyList<string> TrustedProxies,
-    IReadOnlyList<string> TrustedNetworks)
+    IReadOnlyList<string> TrustedNetworks,
+    string? BackplaneRedisConnectionString,
+    string BackplaneChannelPrefix,
+    string InstanceId)
 {
     public static SyncServerOptions Default { get; } = new(
         MaxRooms: 10_000,
@@ -28,7 +31,10 @@ public sealed record SyncServerOptions(
         JoinTimeout: TimeSpan.FromSeconds(10),
         AllowedOrigins: [],
         TrustedProxies: [],
-        TrustedNetworks: []);
+        TrustedNetworks: [],
+        BackplaneRedisConnectionString: null,
+        BackplaneChannelPrefix: "mmn:sync",
+        InstanceId: Guid.NewGuid().ToString("N"));
 
     public static SyncServerOptions FromConfiguration(IConfiguration configuration)
     {
@@ -46,7 +52,10 @@ public sealed record SyncServerOptions(
             TimeSpan.FromSeconds(GetInt(configuration, "MMN_SYNC_JOIN_TIMEOUT_SECONDS", "Sync:JoinTimeoutSeconds", (int)Default.JoinTimeout.TotalSeconds, 1, 120)),
             GetAllowedOrigins(configuration),
             GetList(configuration, "MMN_SYNC_TRUSTED_PROXIES", "Sync:TrustedProxies"),
-            GetList(configuration, "MMN_SYNC_TRUSTED_NETWORKS", "Sync:TrustedNetworks"));
+            GetList(configuration, "MMN_SYNC_TRUSTED_NETWORKS", "Sync:TrustedNetworks"),
+            GetOptionalString(configuration, "MMN_SYNC_BACKPLANE_REDIS", "Sync:BackplaneRedis"),
+            GetString(configuration, "MMN_SYNC_BACKPLANE_CHANNEL_PREFIX", "Sync:BackplaneChannelPrefix", Default.BackplaneChannelPrefix),
+            GetString(configuration, "MMN_SYNC_INSTANCE_ID", "Sync:InstanceId", Default.InstanceId));
     }
 
     private static int GetInt(IConfiguration configuration, string environmentKey, string configKey, int fallback, int min, int max)
@@ -69,6 +78,18 @@ public sealed record SyncServerOptions(
         }
 
         return raw.Split([',', ';'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+    }
+
+    private static string? GetOptionalString(IConfiguration configuration, string environmentKey, string configKey)
+    {
+        var raw = Environment.GetEnvironmentVariable(environmentKey) ?? configuration[configKey];
+        return string.IsNullOrWhiteSpace(raw) ? null : raw.Trim();
+    }
+
+    private static string GetString(IConfiguration configuration, string environmentKey, string configKey, string fallback)
+    {
+        var raw = Environment.GetEnvironmentVariable(environmentKey) ?? configuration[configKey];
+        return string.IsNullOrWhiteSpace(raw) ? fallback : raw.Trim();
     }
 
     private static string[] GetAllowedOrigins(IConfiguration configuration)
