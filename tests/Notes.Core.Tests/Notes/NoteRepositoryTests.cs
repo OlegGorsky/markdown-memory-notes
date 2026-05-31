@@ -41,6 +41,41 @@ public sealed class NoteRepositoryTests
     }
 
     [Fact]
+    public async Task ReadUsesStablePathIdWhenFrontmatterIsMissing()
+    {
+        var vault = await CreateVaultAsync();
+        var path = Path.Combine(vault.InboxPath, "imported.md");
+        var otherPath = Path.Combine(vault.InboxPath, "other.md");
+        File.WriteAllText(path, "# Imported\nCaptured elsewhere");
+        File.WriteAllText(otherPath, "# Other\nCaptured elsewhere");
+        var repository = new NoteRepository(new PhysicalFileSystem());
+
+        var firstRead = await repository.ReadAsync(path);
+        var secondRead = await repository.ReadAsync(path);
+        var otherNote = await repository.ReadAsync(otherPath);
+
+        Assert.StartsWith("path_", firstRead.Id, StringComparison.Ordinal);
+        Assert.Equal(firstRead.Id, secondRead.Id);
+        Assert.NotEqual(firstRead.Id, otherNote.Id);
+    }
+
+    [Fact]
+    public async Task ListUsesVaultRelativePathIdWhenFrontmatterIsMissing()
+    {
+        var firstVault = await CreateVaultAsync();
+        var secondVault = await CreateVaultAsync();
+        File.WriteAllText(Path.Combine(firstVault.NotesPath, "imported.md"), "# Imported\nCaptured elsewhere");
+        File.WriteAllText(Path.Combine(secondVault.NotesPath, "imported.md"), "# Imported\nCaptured elsewhere");
+        var repository = new NoteRepository(new PhysicalFileSystem());
+
+        var firstNote = Assert.Single(await repository.ListAsync(firstVault));
+        var secondNote = Assert.Single(await repository.ListAsync(secondVault));
+
+        Assert.StartsWith("path_", firstNote.Id, StringComparison.Ordinal);
+        Assert.Equal(firstNote.Id, secondNote.Id);
+    }
+
+    [Fact]
     public async Task SavePreservesExistingIdAndUpdatesBody()
     {
         var vault = await CreateVaultAsync();

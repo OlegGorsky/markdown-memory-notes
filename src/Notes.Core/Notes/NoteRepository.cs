@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Notes.Core.Files;
 using Notes.Core.Markdown;
 using Notes.Core.Vault;
@@ -53,7 +55,7 @@ public sealed class NoteRepository
             new ParallelOptions { MaxDegreeOfParallelism = MaxConcurrentReads },
             async (index, _) =>
             {
-                notes[index] = await ReadAsync(files[index]);
+                notes[index] = await ReadAsync(files[index], vault.RootPath);
             });
 
         return notes.OrderByDescending(static note => note.Updated).ToArray();
@@ -61,13 +63,19 @@ public sealed class NoteRepository
 
     public async Task<Note> ReadAsync(string path)
     {
+        return await ReadAsync(path, vaultRootPath: null);
+    }
+
+    private async Task<Note> ReadAsync(string path, string? vaultRootPath)
+    {
         var text = await fileSystem.ReadAllTextAsync(path);
         var document = MarkdownParser.Parse(text);
-        var id = document.GetFrontmatterValue("id", "path_" + Guid.NewGuid().ToString("N"));
+        var fullPath = Path.GetFullPath(path);
+        var id = document.GetFrontmatterValue("id", FallbackIdForPath(path, fullPath, vaultRootPath));
         var title = document.GetFrontmatterValue("title", NoteTitle.FromBodyOrFileName(document.Body, path));
         var created = ParseDate(document.GetFrontmatterValue("created"));
         var updated = ParseDate(document.GetFrontmatterValue("updated"));
-        return new Note(id, title, Path.GetFullPath(path), document.Body, created, updated);
+        return new Note(id, title, fullPath, document.Body, created, updated);
     }
 
     public async Task<Note> SaveAsync(Note note)
@@ -92,6 +100,45 @@ public sealed class NoteRepository
     private static DateTimeOffset ParseDate(string value)
     {
         return DateTimeOffset.TryParse(value, out var parsed) ? parsed : DateTimeOffset.MinValue;
+    }
+
+    private static string FallbackIdForPath(string path, string fullPath, string? vaultRootPath)
+    {
+        var identityPath = TryGetVaultRelativeContentPath(path, fullPath, vaultRootPath, out var relativePath)
+            ? relativePath
+            : fullPath.Replace('\\', '/');
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(identityPath));
+        return "path_" + Convert.ToHexStringLower(hash)[..32];
+    }
+
+    private static bool TryGetVaultRelativeContentPath(
+        string path,
+        string fullPath,
+        string? vaultRootPath,
+        out string relativePath)
+    {
+        var normalizedPath = path.Replace('\\', '/');
+        if (VaultRelativePath.TryNormalizeMarkdownContentPath(normalizedPath, out relativePath))
+        {
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(vaultRootPath))
+        {
+            relativePath = string.Empty;
+            return false;
+        }
+
+        var normalizedRoot = Path.GetFullPath(vaultRootPath).Replace('\\', '/').TrimEnd('/') + "/";
+        var normalizedFullPath = fullPath.Replace('\\', '/');
+        if (!normalizedFullPath.StartsWith(normalizedRoot, StringComparison.Ordinal))
+        {
+            relativePath = string.Empty;
+            return false;
+        }
+
+        var candidate = normalizedFullPath[normalizedRoot.Length..];
+        return VaultRelativePath.TryNormalizeMarkdownContentPath(candidate, out relativePath);
     }
 
     private async Task<string> UniquePathAsync(string directory, string slug)
