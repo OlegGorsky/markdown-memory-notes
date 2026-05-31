@@ -25,4 +25,47 @@ public sealed class QuietMemoryServiceTests
         Assert.Equal("Related note", candidates[0].Kind);
         Assert.Contains("quiet", candidates[0].Reason, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void SuggestUsesBoundedContextForLargeNotes()
+    {
+        var now = DateTimeOffset.Now;
+        var current = new Note("note_current", "Current", "/current.md", new string('a', 20_000), now, now);
+        var index = new CapturingSearchIndex();
+        var service = new QuietMemoryService(index);
+
+        service.Suggest(new MemoryQuery(current, "", 5));
+
+        Assert.NotNull(index.Query);
+        Assert.True(index.Query.Length <= 4096, $"Query length was {index.Query.Length}.");
+    }
+
+    [Fact]
+    public void SuggestKeepsCurrentNoteTitleInBoundedFallbackContext()
+    {
+        var now = DateTimeOffset.Now;
+        var current = new Note("note_current", "Important title", "/current.md", new string('a', 20_000), now, now);
+        var index = new CapturingSearchIndex();
+        var service = new QuietMemoryService(index);
+
+        service.Suggest(new MemoryQuery(current, "", 5));
+
+        Assert.StartsWith("Important title ", index.Query, StringComparison.Ordinal);
+        Assert.True(index.Query.Length <= 4096, $"Query length was {index.Query.Length}.");
+    }
+
+    private sealed class CapturingSearchIndex : ISearchIndex
+    {
+        public string Query { get; private set; } = string.Empty;
+
+        public void Rebuild(IEnumerable<Note> notes)
+        {
+        }
+
+        public IReadOnlyList<SearchResult> Search(string query, int limit)
+        {
+            Query = query;
+            return [];
+        }
+    }
 }

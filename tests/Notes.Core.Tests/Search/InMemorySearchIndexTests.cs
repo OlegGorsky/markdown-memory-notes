@@ -57,4 +57,37 @@ public sealed class InMemorySearchIndexTests
         Assert.Empty(index.Search("quiet", 5));
         Assert.Single(index.Search("trail", 5));
     }
+
+    [Fact]
+    public void SearchUsesBoundedQueryTerms()
+    {
+        var index = new InMemorySearchIndex();
+        var now = DateTimeOffset.Now;
+        var terms = Enumerable.Range(0, 40)
+            .Select(value => $"term{value:D2}")
+            .ToArray();
+        index.Rebuild([
+            new Note("note_a", "Body only", "/a.md", string.Join(' ', terms), now, now)
+        ]);
+
+        var result = Assert.Single(index.Search(string.Join(' ', terms), 5));
+
+        Assert.Equal(64, result.Score);
+        Assert.Equal(32, result.MatchedTerms.Count);
+    }
+
+    [Fact]
+    public void SearchDeduplicatesQueryTerms()
+    {
+        var index = new InMemorySearchIndex();
+        var now = DateTimeOffset.Now;
+        index.Rebuild([
+            new Note("note_a", "Quiet memory", "/a.md", "Quiet suggestions", now, now)
+        ]);
+
+        var result = Assert.Single(index.Search("quiet quiet quiet", 5));
+
+        Assert.Equal(7, result.Score);
+        Assert.Equal(["quiet"], result.MatchedTerms);
+    }
 }

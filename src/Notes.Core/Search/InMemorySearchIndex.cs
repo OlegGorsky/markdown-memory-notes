@@ -5,6 +5,7 @@ namespace Notes.Core.Search;
 
 public sealed partial class InMemorySearchIndex : ISearchIndex
 {
+    private const int MaxQueryTerms = 32;
     private readonly List<Note> notes = new();
 
     public void Rebuild(IEnumerable<Note> notesToIndex)
@@ -78,11 +79,24 @@ public sealed partial class InMemorySearchIndex : ISearchIndex
 
     private static IEnumerable<string> Tokenize(string value)
     {
-        foreach (Match match in WordRegex().Matches(value.ToLowerInvariant()))
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (Match match in WordRegex().Matches(value))
         {
-            if (match.Value.Length >= 3)
+            if (match.Value.Length < 3)
             {
-                yield return match.Value;
+                continue;
+            }
+
+            var term = match.Value.ToLowerInvariant();
+            if (!seen.Add(term))
+            {
+                continue;
+            }
+
+            yield return term;
+            if (seen.Count >= MaxQueryTerms)
+            {
+                yield break;
             }
         }
     }
