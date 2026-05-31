@@ -21,6 +21,7 @@ public sealed class SyncOriginPolicyTests
     }
 
     [Theory]
+    [InlineData(null)]
     [InlineData("https://evil.example.com")]
     [InlineData("https://app.example.com.evil.test")]
     [InlineData("https://app.example.com/path")]
@@ -34,11 +35,5 @@ public sealed class SyncOriginPolicyTests
     public void IsAllowedRejectsUnknownOriginsWhenAllowlistIsConfigured(string? origin)
     {
         Assert.False(SyncOriginPolicy.IsAllowed(origin, ["https://app.example.com"]));
-    }
-
-    [Fact]
-    public void IsAllowedAllowsNonBrowserClientsWithoutOrigin()
-    {
-        Assert.True(SyncOriginPolicy.IsAllowed(null, ["https://app.example.com"]));
     }
 }

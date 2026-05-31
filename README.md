@@ -50,7 +50,7 @@ MMN_SYNC_TRUSTED_NETWORKS=10.0.0.0/8 \
 nix develop --command dotnet run --project src/Notes.Sync/Notes.Sync.csproj
 ```
 
-`MMN_SYNC_ALLOWED_ORIGINS` is optional for local development. In production, set it to a comma- or semicolon-separated list of full `http(s)://host[:port]` origins allowed to open browser WebSocket connections.
+`MMN_SYNC_ALLOWED_ORIGINS` is optional for local development. In production, set it to a comma- or semicolon-separated list of full `http(s)://host[:port]` origins allowed to open browser WebSocket connections. When this allowlist is configured, relay connections without an `Origin` header are rejected.
 `MMN_SYNC_MAX_CONNECTIONS` bounds active relay WebSockets per process, including clients that have not joined a room yet. `MMN_SYNC_MAX_CONNECTIONS_PER_CLIENT` bounds active WebSockets per observed remote client address; raise it when the relay sits behind a trusted reverse proxy that fans many users through one address.
 `MMN_SYNC_JOIN_TIMEOUT_SECONDS` bounds how long a new WebSocket can hold a relay slot before sending its room join payload.
 `MMN_SYNC_TRUSTED_PROXIES` and `MMN_SYNC_TRUSTED_NETWORKS` enable `X-Forwarded-For` handling only for explicitly trusted reverse proxies; leave them empty when the relay is directly internet-facing.

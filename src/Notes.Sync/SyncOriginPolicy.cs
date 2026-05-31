@@ -11,11 +11,6 @@ public static class SyncOriginPolicy
             return true;
         }
 
-        if (origin is null)
-        {
-            return true;
-        }
-
         if (string.IsNullOrWhiteSpace(origin))
         {
             return false;
