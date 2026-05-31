@@ -9,6 +9,7 @@ public sealed class SyncClient : IAsyncDisposable
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private const int DefaultMaxQueuedOperations = 256;
+    private const int DefaultMaxInFlightOperations = 16;
     private static readonly TimeSpan DefaultAckTimeout = TimeSpan.FromSeconds(10);
 
     private readonly IJSRuntime js;
@@ -276,7 +277,7 @@ public sealed class SyncClient : IAsyncDisposable
 
     private async Task FlushPendingCoreAsync()
     {
-        while (CanSendNow)
+        while (CanSendNow && HasInFlightCapacity())
         {
             var message = NextPendingToSend();
             if (message is null)
@@ -300,6 +301,14 @@ public sealed class SyncClient : IAsyncDisposable
                 MarkDisconnected();
                 return;
             }
+        }
+    }
+
+    private bool HasInFlightCapacity()
+    {
+        lock (pendingGate)
+        {
+            return inFlightPathByMessageId.Count < DefaultMaxInFlightOperations;
         }
     }
 

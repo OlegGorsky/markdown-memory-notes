@@ -300,6 +300,30 @@ public sealed class SyncClientTests
     }
 
     [Fact]
+    public async Task SendFileAsyncBoundsDefaultInFlightWindowUntilAcked()
+    {
+        var js = new CapturingJsRuntime();
+        await using var client = new SyncClient(js);
+        await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "AbCdEfGhIjKlMnOpQrStUv", (_, _) => Task.CompletedTask);
+
+        for (var i = 0; i < 17; i++)
+        {
+            await client.SendFileAsync($"notes/{i:00}.md", $"# Note {i}");
+        }
+
+        await client.OnStatus("connected");
+        await client.OnMessage("""{"type":"presence","peerCount":2}""");
+
+        Assert.Equal(16, js.Module.SentMessages.Count);
+        var firstMessageId = ReadMessageId(js.Module.SentMessages[0]);
+
+        await client.OnMessage($$"""{"type":"ack","messageId":"{{firstMessageId}}"}""");
+
+        Assert.Equal(17, js.Module.SentMessages.Count);
+        Assert.Contains("\"path\":\"notes/16.md\"", js.Module.SentMessages[^1], StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task AckedMessageIsNotRetriedAfterAckTimeout()
     {
         var js = new CapturingJsRuntime();
