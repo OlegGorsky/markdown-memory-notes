@@ -28,6 +28,14 @@
 /* ── Reset ───────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 
+/* ── Lucide Icons ────────────────────────── */
+.lucide-icon { width: 16px; height: 16px; flex-shrink: 0; vertical-align: middle; }
+.glass-btn .lucide-icon { width: 14px; height: 14px; }
+.tree-icon { width: 14px; height: 14px; color: var(--text-secondary); flex-shrink: 0; }
+.tree-arrow.lucide-icon { width: 12px; height: 12px; color: var(--text-muted); }
+.vault-icon.lucide-icon { width: 16px; height: 16px; }
+.sync-badge .lucide-icon { width: 12px; height: 12px; }
+
 html, body {
     margin: 0; padding: 0;
     background: var(--bg-deep);

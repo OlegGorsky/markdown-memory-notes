@@ -17,7 +17,7 @@ else
     <div class="app-shell">
         <div class="toolbar">
             <span class="vault-name">@Session.CurrentVault!.RootPath</span>
-            <button class="glass-btn glass-btn-accent glass-btn-sm" @onclick="NewNoteAsync">+ Новая</button>
+            <button class="glass-btn glass-btn-accent glass-btn-sm" @onclick="NewNoteAsync"><LucideIcon Name="plus" /> Новая</button>
         </div>
 
         <div class="main-grid">
@@ -29,7 +29,7 @@ else
                          @onclick="() => SwitchVaultAsync(vault)"
                          @onmouseenter="() => _hoverVault = vault.Id"
                          @onmouseleave="() => _hoverVault = null">
-                        <span class="vault-icon">📁</span>
+                        <LucideIcon Name="folder" Class="vault-icon" />
                         <span class="vault-label">@vault.Name</span>
                         @if (_hoverVault == vault.Id)
                         {
@@ -37,15 +37,15 @@ else
                                 @if (vault.SyncCode is null)
                                 {
                                     <button class="glass-btn glass-btn-sm" title="Синхронизировать"
-                                            @onclick="() => GenerateSyncCodeAsync(vault)" @onclick:stopPropagation="true">🔄</button>
+                                            @onclick="() => GenerateSyncCodeAsync(vault)" @onclick:stopPropagation="true"><LucideIcon Name="refresh-cw" /></button>
                                 }
                                 else
                                 {
                                     <span class="sync-badge @(Sync.IsConnected ? "connected" : "")"
-                                          title="Код: @vault.SyncCode">@(Sync.IsConnected ? "✓" : "⟳")</span>
+                                          title="Код: @vault.SyncCode"><LucideIcon Name="@(Sync.IsConnected ? "check" : "unplug")" /></span>
                                 }
                                 <button class="glass-btn glass-btn-sm" title="Удалить хранилище"
-                                        @onclick="() => DeleteVaultAsync(vault)" @onclick:stopPropagation="true">✕</button>
+                                        @onclick="() => DeleteVaultAsync(vault)" @onclick:stopPropagation="true"><LucideIcon Name="x" /></button>
                             </span>
                         }
                     </div>
@@ -61,7 +61,7 @@ else
                     }
                 }
                 <button class="glass-btn glass-btn-sm mt-2" @onclick="AddVaultAsync"
-                        style="width:100%;justify-content:center">+ Добавить папку</button>
+                        style="width:100%;justify-content:center"><LucideIcon Name="plus" /> Добавить папку</button>
                 @if (_syncInputVault is not null)
                 {
                     <div class="sync-input-row mt-2">
@@ -79,7 +79,7 @@ else
                         <input @bind="_editTitle" @bind:event="oninput" @bind:after="OnFieldChanged"
                                class="glass-input" placeholder="Заголовок" />
                         <button class="glass-btn glass-btn-sm" @onclick="() => _previewMode = !_previewMode">
-                            @(_previewMode ? "✎ Ред." : "◉ Превью")
+                            <LucideIcon Name="@(_previewMode ? "pencil" : "eye")" />
                         </button>
                     </div>
                     @if (_previewMode)
@@ -91,17 +91,17 @@ else
                     else
                     {
                         <div class="editor-toolbar">
-                            <button class="glass-btn glass-btn-sm" title="Жирный" @onclick="() => InsertMdFormat(MdFormat.Bold)"><b>B</b></button>
-                            <button class="glass-btn glass-btn-sm" title="Курсив" @onclick="() => InsertMdFormat(MdFormat.Italic)"><i>I</i></button>
-                            <button class="glass-btn glass-btn-sm" title="Заголовок" @onclick="() => InsertMdFormat(MdFormat.Heading)">H</button>
-                            <button class="glass-btn glass-btn-sm" title="Список" @onclick="() => InsertMdFormat(MdFormat.List)">&equiv;</button>
-                            <button class="glass-btn glass-btn-sm" title="Код" @onclick="() => InsertMdFormat(MdFormat.Code)">&lt;/&gt;</button>
-                            <button class="glass-btn glass-btn-sm" title="Ссылка" @onclick="() => InsertMdFormat(MdFormat.Link)">🔗</button>
-                            <button class="glass-btn glass-btn-sm" title="Цитата" @onclick="() => InsertMdFormat(MdFormat.Quote)">❝</button>
-                            <button class="glass-btn glass-btn-sm" title="Таблица" @onclick="() => InsertMdFormat(MdFormat.Table)">⊞</button>
-                            <button class="glass-btn glass-btn-sm" title="Картинка" @onclick="() => InsertMdFormat(MdFormat.Image)">🖼</button>
-                            <button class="glass-btn glass-btn-sm" title="Разделитель" @onclick="() => InsertMdFormat(MdFormat.Divider)">—</button>
-                            <button class="glass-btn glass-btn-sm" title="Чеклист" @onclick="() => InsertMdFormat(MdFormat.Checklist)">☐</button>
+                            <button class="glass-btn glass-btn-sm" title="Жирный" @onclick="() => InsertMdFormat(MdFormat.Bold)"><LucideIcon Name="bold" /></button>
+                            <button class="glass-btn glass-btn-sm" title="Курсив" @onclick="() => InsertMdFormat(MdFormat.Italic)"><LucideIcon Name="italic" /></button>
+                            <button class="glass-btn glass-btn-sm" title="Заголовок" @onclick="() => InsertMdFormat(MdFormat.Heading)"><LucideIcon Name="heading" /></button>
+                            <button class="glass-btn glass-btn-sm" title="Список" @onclick="() => InsertMdFormat(MdFormat.List)"><LucideIcon Name="list" /></button>
+                            <button class="glass-btn glass-btn-sm" title="Код" @onclick="() => InsertMdFormat(MdFormat.Code)"><LucideIcon Name="code" /></button>
+                            <button class="glass-btn glass-btn-sm" title="Ссылка" @onclick="() => InsertMdFormat(MdFormat.Link)"><LucideIcon Name="link" /></button>
+                            <button class="glass-btn glass-btn-sm" title="Цитата" @onclick="() => InsertMdFormat(MdFormat.Quote)"><LucideIcon Name="quote" /></button>
+                            <button class="glass-btn glass-btn-sm" title="Таблица" @onclick="() => InsertMdFormat(MdFormat.Table)"><LucideIcon Name="table" /></button>
+                            <button class="glass-btn glass-btn-sm" title="Картинка" @onclick="() => InsertMdFormat(MdFormat.Image)"><LucideIcon Name="image" /></button>
+                            <button class="glass-btn glass-btn-sm" title="Разделитель" @onclick="() => InsertMdFormat(MdFormat.Divider)"><LucideIcon Name="minus" /></button>
+                            <button class="glass-btn glass-btn-sm" title="Чеклист" @onclick="() => InsertMdFormat(MdFormat.Checklist)"><LucideIcon Name="list-checks" /></button>
                         </div>
                         <textarea @ref="_textareaRef" @bind="_editBody" @bind:event="oninput" @bind:after="OnFieldChanged"
                                   class="editor-textarea" rows="20"></textarea>

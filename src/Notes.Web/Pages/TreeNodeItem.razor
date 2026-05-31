@@ -3,8 +3,9 @@
 @if (Node.IsFolder)
 {
     <div class="tree-folder" @onclick="() => Node.Expanded = !Node.Expanded">
-        <span class="tree-arrow">@(Node.Expanded ? "▼" : "▶")</span>
-        <span class="tree-name">📁 @Node.Name</span>
+        <LucideIcon Name="@(Node.Expanded ? "chevron-down" : "chevron-right")" Class="tree-arrow" />
+        <LucideIcon Name="folder" Class="tree-icon" />
+        <span class="tree-name">@Node.Name</span>
     </div>
     @if (Node.Expanded)
     {
@@ -22,14 +23,15 @@ else if (Node.Note is not null)
          @onclick="() => OnSelect.InvokeAsync(Node.Note)"
          @onmouseenter="() => _hoverNote = Node.Note"
          @onmouseleave="() => _hoverNote = null">
-        <span class="tree-name">📄 @(Node.NoteTitle ?? Node.Name)</span>
+        <LucideIcon Name="file-text" Class="tree-icon" />
+        <span class="tree-name">@(Node.NoteTitle ?? Node.Name)</span>
         @if (_hoverNote == Node.Note)
         {
             <span class="tree-actions">
                 <button class="glass-btn glass-btn-sm" title="Дублировать"
-                        @onclick="() => OnDuplicate.InvokeAsync(Node.Note)" @onclick:stopPropagation="true">📋</button>
+                        @onclick="() => OnDuplicate.InvokeAsync(Node.Note)" @onclick:stopPropagation="true"><LucideIcon Name="copy" /></button>
                 <button class="glass-btn glass-btn-sm" title="Удалить"
-                        @onclick="() => OnDelete.InvokeAsync(Node.Note)" @onclick:stopPropagation="true">🗑</button>
+                        @onclick="() => OnDelete.InvokeAsync(Node.Note)" @onclick:stopPropagation="true"><LucideIcon Name="trash-2" /></button>
             </span>
         }
     </div>
