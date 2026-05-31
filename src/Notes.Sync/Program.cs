@@ -80,6 +80,7 @@ async Task HandleSyncRequestAsync(HttpContext context)
         var joinPayload = join.Payload ?? string.Empty;
         if (!SyncJoinRequest.TryGetRoom(joinPayload, out var requestedRoom))
         {
+            metrics.JoinRejected();
             await CloseSafeAsync(ws, WebSocketCloseStatus.PolicyViolation, "Invalid room", context.RequestAborted);
             return;
         }
@@ -88,6 +89,7 @@ async Task HandleSyncRequestAsync(HttpContext context)
         var joinResult = rooms.TryJoin(room, connectionId, ws);
         if (joinResult is not SyncJoinResult.Joined)
         {
+            metrics.JoinRejected();
             await CloseSafeAsync(ws, WebSocketCloseStatus.PolicyViolation, JoinResultMessage(joinResult), context.RequestAborted);
             return;
         }

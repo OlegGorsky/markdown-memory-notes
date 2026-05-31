@@ -9,6 +9,7 @@ public sealed class SyncMetrics
     private long messagesRateLimited;
     private long connectionLimitRejected;
     private long joinTimedOut;
+    private long joinRejected;
     private long deliveriesAttempted;
     private long deliveriesSucceeded;
     private long deliveriesFailed;
@@ -37,6 +38,11 @@ public sealed class SyncMetrics
     public void JoinTimedOut()
     {
         Interlocked.Increment(ref joinTimedOut);
+    }
+
+    public void JoinRejected()
+    {
+        Interlocked.Increment(ref joinRejected);
     }
 
     public void DeliveryAttempted(int count = 1)
@@ -70,6 +76,7 @@ public sealed class SyncMetrics
             Interlocked.Read(ref messagesRateLimited),
             Interlocked.Read(ref connectionLimitRejected),
             Interlocked.Read(ref joinTimedOut),
+            Interlocked.Read(ref joinRejected),
             Interlocked.Read(ref deliveriesAttempted),
             Interlocked.Read(ref deliveriesSucceeded),
             Interlocked.Read(ref deliveriesFailed),
@@ -90,6 +97,7 @@ public sealed class SyncMetrics
             mmn_sync_messages_rate_limited_total {snapshot.MessagesRateLimited}
             mmn_sync_connection_limit_rejected_total {snapshot.ConnectionLimitRejected}
             mmn_sync_join_timed_out_total {snapshot.JoinTimedOut}
+            mmn_sync_join_rejected_total {snapshot.JoinRejected}
             mmn_sync_deliveries_attempted_total {snapshot.DeliveriesAttempted}
             mmn_sync_deliveries_succeeded_total {snapshot.DeliveriesSucceeded}
             mmn_sync_deliveries_failed_total {snapshot.DeliveriesFailed}
@@ -105,6 +113,7 @@ public sealed record SyncMetricSnapshot(
     long MessagesRateLimited,
     long ConnectionLimitRejected,
     long JoinTimedOut,
+    long JoinRejected,
     long DeliveriesAttempted,
     long DeliveriesSucceeded,
     long DeliveriesFailed,
