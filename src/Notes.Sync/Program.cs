@@ -20,7 +20,9 @@ var broadcaster = new SyncBroadcaster<WebSocket>(
 
 app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(30) });
 
-app.Map("/sync", async (HttpContext context) =>
+app.Map("/sync", HandleSyncRequestAsync);
+
+async Task HandleSyncRequestAsync(HttpContext context)
 {
     if (!context.WebSockets.IsWebSocketRequest)
     {
@@ -54,12 +56,23 @@ app.Map("/sync", async (HttpContext context) =>
 
     try
     {
-        var joinPayload = await ReceiveTextAsync(ws, options.MaxMessageBytes, context.RequestAborted);
-        if (joinPayload is null)
+        var join = await SyncJoinPayloadReceiver.ReceiveAsync(
+            token => ReceiveTextAsync(ws, options.MaxMessageBytes, token),
+            options.JoinTimeout,
+            context.RequestAborted);
+        if (join.Status is SyncJoinPayloadStatus.Closed)
         {
             return;
         }
 
+        if (join.Status is SyncJoinPayloadStatus.TimedOut)
+        {
+            metrics.JoinTimedOut();
+            ws.Abort();
+            return;
+        }
+
+        var joinPayload = join.Payload ?? string.Empty;
         if (!SyncJoinRequest.TryGetRoom(joinPayload, out var requestedRoom))
         {
             await CloseSafeAsync(ws, WebSocketCloseStatus.PolicyViolation, "Invalid room", context.RequestAborted);
@@ -133,7 +146,15 @@ app.Map("/sync", async (HttpContext context) =>
     }
     catch (OperationCanceledException)
     {
-        SyncLog.RequestCancelled(app.Logger);
+        if (room is null && !context.RequestAborted.IsCancellationRequested)
+        {
+            metrics.JoinTimedOut();
+            await CloseSafeAsync(ws, WebSocketCloseStatus.PolicyViolation, "Join timeout", CancellationToken.None);
+        }
+        else
+        {
+            SyncLog.RequestCancelled(app.Logger);
+        }
     }
     finally
     {
@@ -147,7 +168,7 @@ app.Map("/sync", async (HttpContext context) =>
             }
         }
     }
-});
+}
 
 app.MapGet("/health", () =>
 {
@@ -166,6 +187,7 @@ app.MapGet("/health", () =>
         options.MaxMessageBytes,
         options.MaxMessagesPerMinute,
         options.MaxFanoutConcurrency,
+        joinTimeoutSeconds = options.JoinTimeout.TotalSeconds,
         allowedOriginsConfigured = options.AllowedOrigins.Count
     });
 });

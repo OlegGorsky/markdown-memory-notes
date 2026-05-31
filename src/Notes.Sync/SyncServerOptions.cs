@@ -11,6 +11,7 @@ public sealed record SyncServerOptions(
     int MaxConnectionsPerClient,
     int MaxFanoutConcurrency,
     TimeSpan SendTimeout,
+    TimeSpan JoinTimeout,
     IReadOnlyList<string> AllowedOrigins)
 {
     public static SyncServerOptions Default { get; } = new(
@@ -22,6 +23,7 @@ public sealed record SyncServerOptions(
         MaxConnectionsPerClient: 256,
         MaxFanoutConcurrency: 16,
         SendTimeout: TimeSpan.FromSeconds(5),
+        JoinTimeout: TimeSpan.FromSeconds(10),
         AllowedOrigins: []);
 
     public static SyncServerOptions FromConfiguration(IConfiguration configuration)
@@ -37,6 +39,7 @@ public sealed record SyncServerOptions(
             GetInt(configuration, "MMN_SYNC_MAX_CONNECTIONS_PER_CLIENT", "Sync:MaxConnectionsPerClient", Default.MaxConnectionsPerClient, 1, maxConnections),
             GetInt(configuration, "MMN_SYNC_MAX_FANOUT_CONCURRENCY", "Sync:MaxFanoutConcurrency", Default.MaxFanoutConcurrency, 1, maxPeersPerRoom),
             TimeSpan.FromSeconds(GetInt(configuration, "MMN_SYNC_SEND_TIMEOUT_SECONDS", "Sync:SendTimeoutSeconds", (int)Default.SendTimeout.TotalSeconds, 1, 60)),
+            TimeSpan.FromSeconds(GetInt(configuration, "MMN_SYNC_JOIN_TIMEOUT_SECONDS", "Sync:JoinTimeoutSeconds", (int)Default.JoinTimeout.TotalSeconds, 1, 120)),
             GetAllowedOrigins(configuration));
     }
 

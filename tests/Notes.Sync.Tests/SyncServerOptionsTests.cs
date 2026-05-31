@@ -18,6 +18,7 @@ public sealed class SyncServerOptionsTests
         Assert.InRange(options.MaxFanoutConcurrency, 1, options.MaxPeersPerRoom);
         Assert.InRange(options.MaxConnections, options.MaxPeersPerRoom, 100_000);
         Assert.InRange(options.MaxConnectionsPerClient, 1, options.MaxConnections);
+        Assert.InRange(options.JoinTimeout, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(30));
         Assert.Empty(options.AllowedOrigins);
     }
 
@@ -95,6 +96,30 @@ public sealed class SyncServerOptionsTests
         finally
         {
             Environment.SetEnvironmentVariable("MMN_SYNC_MAX_CONNECTIONS", previousMaxConnections);
+        }
+    }
+
+    [Fact]
+    public void FromConfigurationReadsJoinTimeout()
+    {
+        var previous = Environment.GetEnvironmentVariable("MMN_SYNC_JOIN_TIMEOUT_SECONDS");
+        try
+        {
+            Environment.SetEnvironmentVariable("MMN_SYNC_JOIN_TIMEOUT_SECONDS", null);
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Sync:JoinTimeoutSeconds"] = "3"
+                })
+                .Build();
+
+            var options = SyncServerOptions.FromConfiguration(configuration);
+
+            Assert.Equal(TimeSpan.FromSeconds(3), options.JoinTimeout);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MMN_SYNC_JOIN_TIMEOUT_SECONDS", previous);
         }
     }
 }
