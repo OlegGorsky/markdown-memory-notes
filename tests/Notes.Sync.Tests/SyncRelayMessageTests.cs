@@ -56,4 +56,15 @@ public sealed class SyncRelayMessageTests
 
         Assert.False(SyncRelayMessage.IsValid(json, maxContentBytes: 4));
     }
+
+    [Theory]
+    [InlineData("""{"type":"file","Type":"delete","path":"notes/a.md","content":"# A"}""")]
+    [InlineData("""{"type":"file","path":"notes/a.md","Path":"notes/b.md","content":"# A"}""")]
+    [InlineData("""{"type":"file","path":"notes/a.md","content":"# A","Content":"# B"}""")]
+    [InlineData("""{"type":"file","path":"notes/a.md","content":"# A","baseHash":null,"BaseHash":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}""")]
+    [InlineData("""{"type":"file","path":"notes/a.md","content":"# A","messageId":null,"MessageId":"0123456789abcdef0123456789abcdef"}""")]
+    public void IsValidRejectsDuplicateProtocolProperties(string json)
+    {
+        Assert.False(SyncRelayMessage.IsValid(json, maxContentBytes: 1024));
+    }
 }

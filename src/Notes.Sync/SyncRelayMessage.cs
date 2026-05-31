@@ -19,13 +19,18 @@ public static class SyncRelayMessage
                 return false;
             }
 
-            if (!TryGetProperty(document.RootElement, "type", out var typeElement) ||
+            if (HasDuplicateProtocolProperty(document.RootElement))
+            {
+                return false;
+            }
+
+            if (!TryGetSingleProperty(document.RootElement, "type", out var typeElement) ||
                 typeElement.ValueKind is not JsonValueKind.String)
             {
                 return false;
             }
 
-            if (!TryGetProperty(document.RootElement, "path", out var pathElement) ||
+            if (!TryGetSingleProperty(document.RootElement, "path", out var pathElement) ||
                 pathElement.ValueKind is not JsonValueKind.String ||
                 !VaultRelativePath.TryNormalizeMarkdownContentPath(pathElement.GetString() ?? string.Empty, out _))
             {
@@ -45,7 +50,7 @@ public static class SyncRelayMessage
             }
 
             if (type != "file" ||
-                !TryGetProperty(document.RootElement, "content", out var contentElement) ||
+                !TryGetSingleProperty(document.RootElement, "content", out var contentElement) ||
                 contentElement.ValueKind is not JsonValueKind.String)
             {
                 return false;
@@ -66,7 +71,7 @@ public static class SyncRelayMessage
         try
         {
             using var document = JsonDocument.Parse(json);
-            if (!TryGetProperty(document.RootElement, "messageId", out var messageIdElement) ||
+            if (!TryGetSingleProperty(document.RootElement, "messageId", out var messageIdElement) ||
                 messageIdElement.ValueKind is not JsonValueKind.String)
             {
                 return false;
@@ -89,7 +94,7 @@ public static class SyncRelayMessage
 
     private static bool HasValidOptionalBaseHash(JsonElement element)
     {
-        if (!TryGetProperty(element, "baseHash", out var baseHashElement) ||
+        if (!TryGetSingleProperty(element, "baseHash", out var baseHashElement) ||
             baseHashElement.ValueKind is JsonValueKind.Null)
         {
             return true;
@@ -101,7 +106,7 @@ public static class SyncRelayMessage
 
     private static bool HasValidOptionalMessageId(JsonElement element)
     {
-        if (!TryGetProperty(element, "messageId", out var messageIdElement) ||
+        if (!TryGetSingleProperty(element, "messageId", out var messageIdElement) ||
             messageIdElement.ValueKind is JsonValueKind.Null)
         {
             return true;
@@ -111,19 +116,54 @@ public static class SyncRelayMessage
                SyncMessageId.IsValid(messageIdElement.GetString());
     }
 
-    private static bool TryGetProperty(JsonElement element, string name, out JsonElement property)
+    private static bool HasDuplicateProtocolProperty(JsonElement element)
     {
+        return HasDuplicateProperty(element, "type") ||
+               HasDuplicateProperty(element, "path") ||
+               HasDuplicateProperty(element, "content") ||
+               HasDuplicateProperty(element, "baseHash") ||
+               HasDuplicateProperty(element, "messageId");
+    }
+
+    private static bool HasDuplicateProperty(JsonElement element, string name)
+    {
+        var count = 0;
         foreach (var candidate in element.EnumerateObject())
         {
             if (candidate.NameEquals(name) ||
                 string.Equals(candidate.Name, name, StringComparison.OrdinalIgnoreCase))
             {
-                property = candidate.Value;
-                return true;
+                count++;
+                if (count > 1)
+                {
+                    return true;
+                }
             }
         }
 
-        property = default;
         return false;
+    }
+
+    private static bool TryGetSingleProperty(JsonElement element, string name, out JsonElement property)
+    {
+        var found = false;
+        property = default;
+        foreach (var candidate in element.EnumerateObject())
+        {
+            if (candidate.NameEquals(name) ||
+                string.Equals(candidate.Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                if (found)
+                {
+                    property = default;
+                    return false;
+                }
+
+                property = candidate.Value;
+                found = true;
+            }
+        }
+
+        return found;
     }
 }
