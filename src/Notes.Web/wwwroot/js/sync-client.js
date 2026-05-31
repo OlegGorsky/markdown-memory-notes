@@ -187,6 +187,11 @@ function enqueueIncomingMessage(state, socket, data) {
         .then(() => {
             if (!isCurrentSocket(state, socket)) return;
             return state.dotNetRef.invokeMethodAsync(state.onMessageMethod, data);
+        })
+        .catch(() => {
+            if (isCurrentSocket(state, socket)) {
+                notifyStatus(state, 'error');
+            }
         });
 }
 

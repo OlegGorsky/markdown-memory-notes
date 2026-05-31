@@ -53,12 +53,18 @@ function createHarness() {
     statuses: [],
     messages: [],
     holdMessages: false,
+    rejectNextMessage: false,
     pendingInvocations,
     invokeMethodAsync(method, arg) {
       if (method === 'OnStatus') {
         this.statuses.push(arg);
       } else if (method === 'OnMessage') {
         this.messages.push(arg);
+        if (this.rejectNextMessage) {
+          this.rejectNextMessage = false;
+          return Promise.reject(new Error('message handler failed'));
+        }
+
         if (this.holdMessages) {
           let resolve;
           const promise = new Promise(done => {
@@ -207,6 +213,23 @@ async function testIncomingMessagesAreDeliveredSequentially() {
   assert.deepEqual(harness.dotNetRef.messages, ['first', 'second']);
 }
 
+async function testIncomingMessageFailureReportsErrorAndContinues() {
+  const syncClient = await loadSyncClient();
+  const harness = createHarness();
+  harness.dotNetRef.rejectNextMessage = true;
+
+  syncClient.connect('ws://localhost/sync', 'AbCdEfGhIjKlMnOpQrStUv',
+    harness.dotNetRef, 'OnMessage', 'OnStatus', harness.options);
+  harness.FakeWebSocket.instances[0].open();
+
+  harness.FakeWebSocket.instances[0].onmessage({ data: 'bad' });
+  harness.FakeWebSocket.instances[0].onmessage({ data: 'next' });
+  await nextTurn();
+
+  assert.equal(harness.dotNetRef.statuses.at(-1), 'error');
+  assert.deepEqual(harness.dotNetRef.messages, ['bad', 'next']);
+}
+
 function nextTurn() {
   return new Promise(resolve => setImmediate(resolve));
 }
@@ -216,7 +239,8 @@ const tests = [
   testDisconnectStopsReconnects,
   testReconnectBackoffIsBounded,
   testSendFailureStartsReconnect,
-  testIncomingMessagesAreDeliveredSequentially
+  testIncomingMessagesAreDeliveredSequentially,
+  testIncomingMessageFailureReportsErrorAndContinues
 ];
 
 for (const test of tests) {
