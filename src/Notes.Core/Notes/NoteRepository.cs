@@ -67,6 +67,13 @@ public sealed class NoteRepository
         return await ReadAsync(path, vaultRootPath: null);
     }
 
+    public async Task<Note> ReadAsync(Vault.Vault vault, string path)
+    {
+        ArgumentNullException.ThrowIfNull(vault);
+
+        return await ReadAsync(PathForVaultContent(vault.RootPath, path), vault.RootPath);
+    }
+
     private async Task<Note> ReadAsync(string path, string? vaultRootPath)
     {
         var text = await fileSystem.ReadAllTextAsync(path);

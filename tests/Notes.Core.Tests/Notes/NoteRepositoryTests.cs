@@ -89,6 +89,20 @@ public sealed class NoteRepositoryTests
     }
 
     [Fact]
+    public async Task ReadWithinVaultUsesSameFallbackIdAsList()
+    {
+        var vault = await CreateVaultAsync();
+        var path = Path.Combine(vault.InboxPath, "imported.md");
+        File.WriteAllText(path, "# Imported\nCaptured elsewhere");
+        var repository = new NoteRepository(new PhysicalFileSystem());
+
+        var listed = Assert.Single(await repository.ListAsync(vault));
+        var read = await repository.ReadAsync(vault, path);
+
+        Assert.Equal(listed.Id, read.Id);
+    }
+
+    [Fact]
     public async Task SavePreservesExistingIdAndUpdatesBody()
     {
         var vault = await CreateVaultAsync();

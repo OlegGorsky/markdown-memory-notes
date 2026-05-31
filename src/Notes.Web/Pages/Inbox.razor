@@ -68,10 +68,22 @@ else
     private async Task CaptureAsync()
     {
         if (string.IsNullOrWhiteSpace(_text)) return;
-        await Session.Inbox.CaptureAsync(Session.CurrentVault!, _text);
+        var path = await Session.Inbox.CaptureAsync(Session.CurrentVault!, _text);
+        var note = await Session.Notes.ReadAsync(Session.CurrentVault!, path);
+        Session.UpsertIndexedNote(note);
+        UpsertRecentNote(note);
         _status = $"Записано: {_text[..Math.Min(_text.Length, 50)]}";
         _text = "";
-        await LoadRecentAsync();
+    }
+
+    private void UpsertRecentNote(Note note)
+    {
+        _recentNotes.RemoveAll(existing => existing.Id == note.Id);
+        _recentNotes.Insert(0, note);
+        if (_recentNotes.Count > 20)
+        {
+            _recentNotes.RemoveRange(20, _recentNotes.Count - 20);
+        }
     }
 
     private async Task HandleKeyDown(KeyboardEventArgs e)
