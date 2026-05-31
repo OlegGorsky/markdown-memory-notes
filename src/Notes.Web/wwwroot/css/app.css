@@ -141,6 +141,92 @@ p.lead { font-size: 1.05rem; color: var(--text-secondary); }
 
 .editor-textarea::placeholder { color: var(--text-muted); }
 
+/* ── Markdown Preview ─────────────────────── */
+.md-preview {
+    flex: 1;
+    padding: 24px;
+    overflow-y: auto;
+    line-height: 1.8;
+    color: var(--text-primary);
+    font-family: var(--font);
+    font-size: 0.92rem;
+}
+
+.md-preview h1 { font-size: 1.7rem; font-weight: 600; margin: 0 0 16px; letter-spacing: -0.02em; }
+.md-preview h2 { font-size: 1.35rem; font-weight: 600; margin: 28px 0 12px; letter-spacing: -0.01em; }
+.md-preview h3 { font-size: 1.15rem; font-weight: 600; margin: 22px 0 10px; }
+.md-preview h4, .md-preview h5, .md-preview h6 {
+    font-size: 1rem; font-weight: 600; margin: 18px 0 8px;
+    color: var(--text-secondary); text-transform: none; letter-spacing: 0;
+}
+
+.md-preview p { margin: 0 0 12px; color: var(--text-secondary); }
+.md-preview a { color: var(--accent); text-decoration: none; }
+.md-preview a:hover { text-decoration: underline; }
+
+.md-preview code {
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    background: var(--glass-bg-active);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--text-primary);
+}
+
+.md-preview pre {
+    background: var(--glass-bg);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+    overflow-x: auto;
+    margin: 12px 0;
+}
+
+.md-preview pre code {
+    background: transparent;
+    padding: 0;
+    font-size: 0.82rem;
+    line-height: 1.65;
+}
+
+.md-preview blockquote {
+    border-left: 2px solid var(--accent-soft);
+    margin: 12px 0;
+    padding: 4px 0 4px 16px;
+    color: var(--text-muted);
+}
+
+.md-preview ul, .md-preview ol {
+    padding-left: 24px;
+    margin: 8px 0 12px;
+    color: var(--text-secondary);
+}
+
+.md-preview li { margin-bottom: 4px; }
+
+.md-preview hr {
+    border: none;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    margin: 24px 0;
+}
+
+.md-preview img { max-width: 100%; border-radius: var(--radius-sm); }
+
+.md-preview table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 0.85rem;
+}
+
+.md-preview th, .md-preview td {
+    padding: 8px 12px;
+    border: 1px solid rgba(255,255,255,0.06);
+    text-align: left;
+}
+
+.md-preview th { background: var(--glass-bg); font-weight: 600; color: var(--text-primary); }
+.md-preview td { color: var(--text-secondary); }
+
 /* ── Badge ───────────────────────────────── */
 .glass-badge {
     display: inline-block;
