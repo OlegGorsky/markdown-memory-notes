@@ -1,6 +1,7 @@
 using System.Reflection;
 using MemoryNotes.Web.Services;
 using Microsoft.JSInterop;
+using Notes.Core.Sync;
 using CoreVault = Notes.Core.Vault.Vault;
 using InboxPage = MemoryNotes.Web.Pages.Inbox;
 using Xunit;
@@ -16,8 +17,10 @@ public sealed class InboxPageTests
         await using var fileSystem = new BrowserFileSystem(js);
         var session = new WebVaultSession(fileSystem);
         SetCurrentVault(session, new CoreVault("/vault"));
+        await using var vaultManager = new VaultManager(js);
+        await using var sync = new SyncClient(js);
         var page = new InboxPage();
-        SetProperty(page, "Session", session);
+        SetDependencies(page, session, fileSystem, vaultManager, sync);
         SetField(page, "_text", "Captured thought");
 
         await InvokeCaptureAsync(page);
@@ -26,6 +29,41 @@ public sealed class InboxPageTests
         var note = Assert.Single(GetField<List<Notes.Core.Notes.Note>>(page, "_recentNotes"));
         Assert.StartsWith("Inbox ", note.Title, StringComparison.Ordinal);
         Assert.Contains("Captured thought", note.Body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CaptureAsyncSendsUpdatedInboxFileWhenCurrentVaultSyncIsConnected()
+    {
+        const string syncCode = "AbCdEfGhIjKlMnOpQrStUv";
+        var date = DateTimeOffset.Now.ToString("yyyy-MM-dd");
+        var path = $"/vault/inbox/{date}.md";
+        var existingContent = $"# Inbox {date}\n- 10:00 Existing\n";
+        var expectedBaseHash = SyncContentHash.Compute(existingContent);
+        var js = new CapturingVaultJsRuntime(
+            [new VaultEntry("vault_1", "Vault", "/vault", syncCode)],
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [path] = existingContent
+            });
+        await using var fileSystem = new BrowserFileSystem(js);
+        var session = new WebVaultSession(fileSystem);
+        SetCurrentVault(session, new CoreVault("/vault"));
+        await using var sync = new SyncClient(js);
+        await sync.ConnectAsync(new Uri("ws://localhost:5199/sync"), syncCode, (_, _) => Task.CompletedTask);
+        await sync.OnStatus("connected");
+        await sync.OnMessage("""{"type":"presence","peerCount":2}""");
+        await using var vaultManager = new VaultManager(js);
+        var page = new InboxPage();
+        SetDependencies(page, session, fileSystem, vaultManager, sync);
+        SetField(page, "_text", "Synced thought");
+
+        await InvokeCaptureAsync(page);
+
+        var message = Assert.Single(js.Module.SentMessages);
+        Assert.Contains("\"type\":\"file\"", message, StringComparison.Ordinal);
+        Assert.Contains($"\"path\":\"inbox/{date}.md\"", message, StringComparison.Ordinal);
+        Assert.Contains("Synced thought", message, StringComparison.Ordinal);
+        Assert.Contains($"\"baseHash\":\"{expectedBaseHash}\"", message, StringComparison.Ordinal);
     }
 
     private static async Task InvokeCaptureAsync(InboxPage page)
@@ -44,6 +82,19 @@ public sealed class InboxPageTests
             ?? throw new InvalidOperationException("CurrentVault property was not found.");
 
         property.SetValue(session, vault);
+    }
+
+    private static void SetDependencies(
+        InboxPage page,
+        WebVaultSession session,
+        BrowserFileSystem fileSystem,
+        VaultManager vaultManager,
+        SyncClient sync)
+    {
+        SetProperty(page, "Session", session);
+        SetProperty(page, "FS", fileSystem);
+        SetProperty(page, "VaultMgr", vaultManager);
+        SetProperty(page, "Sync", sync);
     }
 
     private static void SetProperty<T>(object target, string name, T value)
@@ -73,7 +124,17 @@ public sealed class InboxPageTests
 
     private sealed class CapturingVaultJsRuntime : IJSRuntime
     {
-        public CapturingVaultJsObjectReference Module { get; } = new();
+        public CapturingVaultJsRuntime()
+            : this([], new Dictionary<string, string>(StringComparer.Ordinal))
+        {
+        }
+
+        public CapturingVaultJsRuntime(IReadOnlyList<VaultEntry> vaults, Dictionary<string, string> files)
+        {
+            Module = new CapturingVaultJsObjectReference(vaults, files);
+        }
+
+        public CapturingVaultJsObjectReference Module { get; }
 
         public ValueTask<TValue> InvokeAsync<TValue>(string identifier, object?[]? args)
         {
@@ -93,9 +154,17 @@ public sealed class InboxPageTests
 
     private sealed class CapturingVaultJsObjectReference : IJSObjectReference
     {
-        private readonly Dictionary<string, string> files = new(StringComparer.Ordinal);
+        private readonly IReadOnlyList<VaultEntry> vaults;
+        private readonly Dictionary<string, string> files;
+
+        public CapturingVaultJsObjectReference(IReadOnlyList<VaultEntry> vaults, Dictionary<string, string> files)
+        {
+            this.vaults = vaults;
+            this.files = files;
+        }
 
         public int EnumerateFilesCalls { get; private set; }
+        public List<string> SentMessages { get; } = new();
 
         public ValueTask DisposeAsync()
         {
@@ -111,6 +180,10 @@ public sealed class InboxPageTests
                 "readAllText" => Result<TValue>(files[PathArg(args)]),
                 "writeAllText" => WriteAllText<TValue>(args),
                 "enumerateFiles" => EnumerateFiles<TValue>(),
+                "listVaults" => Result<TValue>(vaults.ToArray()),
+                "connect" => Result<TValue>(default!),
+                "send" => Send<TValue>(args),
+                "disconnect" => Result<TValue>(default!),
                 _ => throw new NotSupportedException(identifier)
             };
         }
@@ -131,6 +204,13 @@ public sealed class InboxPageTests
         {
             EnumerateFilesCalls++;
             return Result<TValue>(Array.Empty<string>());
+        }
+
+        private ValueTask<TValue> Send<TValue>(object?[]? args)
+        {
+            SentMessages.Add((string)(args?[0]
+                ?? throw new ArgumentException("Missing sync message.", nameof(args))));
+            return Result<TValue>(true);
         }
 
         private static string PathArg(object?[]? args)

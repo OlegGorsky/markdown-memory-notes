@@ -1,5 +1,8 @@
 @page "/inbox"
+@inject BrowserFileSystem FS
 @inject WebVaultSession Session
+@inject SyncClient Sync
+@inject VaultManager VaultMgr
 
 <PageTitle>Входящие — GorseeNote</PageTitle>
 
@@ -68,10 +71,14 @@ else
     private async Task CaptureAsync()
     {
         if (string.IsNullOrWhiteSpace(_text)) return;
-        var path = await Session.Inbox.CaptureAsync(Session.CurrentVault!, _text);
+        var timestamp = DateTimeOffset.Now;
+        var path = Session.Inbox.GetCapturePath(Session.CurrentVault!, timestamp);
+        var baseHash = await TryReadContentHashAsync(path);
+        path = await Session.Inbox.CaptureAsync(Session.CurrentVault!, _text, timestamp);
         var note = await Session.Notes.ReadAsync(Session.CurrentVault!, path);
         Session.UpsertIndexedNote(note);
         UpsertRecentNote(note);
+        await TrySendSyncCaptureAsync(path, baseHash);
         _status = $"Записано: {_text[..Math.Min(_text.Length, 50)]}";
         _text = "";
     }
@@ -84,6 +91,73 @@ else
         {
             _recentNotes.RemoveRange(20, _recentNotes.Count - 20);
         }
+    }
+
+    private async Task TrySendSyncCaptureAsync(string path, string? baseHash)
+    {
+        if (!await CanSendForCurrentVaultAsync())
+        {
+            return;
+        }
+
+        try
+        {
+            var content = await FS.ReadAllTextAsync(path);
+            await Sync.SendFileAsync(GetRelativePath(path), content, baseHash);
+        }
+        catch (ArgumentException exception) when (string.Equals(exception.ParamName, "content", StringComparison.Ordinal))
+        {
+        }
+    }
+
+    private async Task<bool> CanSendForCurrentVaultAsync()
+    {
+        if (Session.CurrentVault is null)
+        {
+            return false;
+        }
+
+        var vault = (await VaultMgr.ListAsync()).FirstOrDefault(IsCurrentVault);
+        return vault?.SyncCode is not null &&
+               string.Equals(vault.SyncCode, Sync.Room, StringComparison.Ordinal);
+    }
+
+    private bool IsCurrentVault(VaultEntry vault)
+    {
+        if (FS.CurrentVaultId is not null &&
+            string.Equals(vault.Id, FS.CurrentVaultId, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return Session.CurrentVault is not null &&
+               string.Equals(vault.Path, Session.CurrentVault.RootPath, StringComparison.Ordinal);
+    }
+
+    private async Task<string?> TryReadContentHashAsync(string path)
+    {
+        try
+        {
+            if (!await FS.FileExistsAsync(path))
+            {
+                return null;
+            }
+
+            var content = await FS.ReadAllTextAsync(path);
+            return global::Notes.Core.Sync.SyncContentHash.Compute(content);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private string GetRelativePath(string path)
+    {
+        if (Session.CurrentVault is null) return path;
+        var root = Session.CurrentVault.RootPath.TrimEnd('/', '\\') + "/";
+        var full = path.Replace('\\', '/');
+        return full.StartsWith(root, StringComparison.Ordinal) ? full[root.Length..] : full;
     }
 
     private async Task HandleKeyDown(KeyboardEventArgs e)

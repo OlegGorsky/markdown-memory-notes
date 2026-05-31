@@ -15,19 +15,29 @@ public sealed class InboxService
 
     public async Task<string> CaptureAsync(Vault.Vault vault, string text)
     {
+        return await CaptureAsync(vault, text, now());
+    }
+
+    public async Task<string> CaptureAsync(Vault.Vault vault, string text, DateTimeOffset timestamp)
+    {
         if (string.IsNullOrWhiteSpace(text))
         {
             throw new ArgumentException("Inbox text cannot be empty.", nameof(text));
         }
 
-        var timestamp = now();
-        var date = timestamp.ToString("yyyy-MM-dd");
-        var path = Path.Combine(vault.InboxPath, date + ".md");
+        var path = GetCapturePath(vault, timestamp);
         var exists = await fileSystem.FileExistsAsync(path);
-        var prefix = exists ? (await fileSystem.ReadAllTextAsync(path)).TrimEnd() : $"# Inbox {date}";
+        var prefix = exists ? (await fileSystem.ReadAllTextAsync(path)).TrimEnd() : $"# Inbox {timestamp:yyyy-MM-dd}";
         var line = $"- {timestamp:HH:mm} {text.Trim()}";
         var next = prefix + Environment.NewLine + line + Environment.NewLine;
         await fileSystem.WriteAllTextAsync(path, next);
         return path;
+    }
+
+    public string GetCapturePath(Vault.Vault vault, DateTimeOffset timestamp)
+    {
+        ArgumentNullException.ThrowIfNull(vault);
+
+        return Path.Combine(vault.InboxPath, timestamp.ToString("yyyy-MM-dd") + ".md");
     }
 }
