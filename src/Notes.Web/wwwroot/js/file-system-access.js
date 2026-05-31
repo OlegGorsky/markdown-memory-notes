@@ -72,12 +72,12 @@ function openDB() {
     });
 }
 
-function resolvePath(rootHandle, relativePath) {
+async function resolvePath(rootHandle, relativePath) {
     if (!relativePath) return rootHandle;
     const parts = relativePath.split('/').filter(p => p);
     let current = rootHandle;
     for (const part of parts) {
-        current = current.getDirectoryHandle(part);
+        current = await current.getDirectoryHandle(part);
     }
     return current;
 }
