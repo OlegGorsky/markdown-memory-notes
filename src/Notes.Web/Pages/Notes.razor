@@ -241,6 +241,7 @@ else
     private List<string> _quietMemory = new();
     private ElementReference _textareaRef;
     private IJSObjectReference? _editorModule;
+    private const string SyncOversizedNotice = "Файл слишком большой для синхронизации.";
 
     protected override async Task OnInitializedAsync()
     {
@@ -492,7 +493,7 @@ else
         await Session.Notes.DeleteAsync(note);
         if (CanSendForActiveVault)
         {
-            await Sync.SendDeleteAsync(relativePath, baseHash);
+            await TrySendSyncChangeAsync(() => Sync.SendDeleteAsync(relativePath, baseHash));
         }
 
         if (_selectedNote?.Id == note.Id)
@@ -535,9 +536,27 @@ else
         {
             var relativePath = GetRelativePath(_selectedNote.Path);
             var content = await FS.ReadAllTextAsync(_selectedNote.Path);
-            await Sync.SendFileAsync(relativePath, content, baseHash);
+            await TrySendSyncChangeAsync(() => Sync.SendFileAsync(relativePath, content, baseHash));
         }
         await ReloadNotesAsync();
+    }
+
+    private async Task TrySendSyncChangeAsync(Func<Task> sendAsync)
+    {
+        ArgumentNullException.ThrowIfNull(sendAsync);
+
+        try
+        {
+            await sendAsync();
+            if (string.Equals(_notice, SyncOversizedNotice, StringComparison.Ordinal))
+            {
+                _notice = null;
+            }
+        }
+        catch (ArgumentException exception) when (string.Equals(exception.ParamName, "content", StringComparison.Ordinal))
+        {
+            _notice = SyncOversizedNotice;
+        }
     }
 
     private async Task ConnectSyncRoomAsync(string code)
