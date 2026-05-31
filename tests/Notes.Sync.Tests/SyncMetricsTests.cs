@@ -35,6 +35,9 @@ public sealed class SyncMetricsTests
         metrics.PresenceTrackerLeaveFailed();
         metrics.PresenceTrackerCountFailed();
         metrics.PresenceTrackerHeartbeatFailed();
+        metrics.AdmissionRejected(SyncJoinResult.RoomFull);
+        metrics.AdmissionRejected(SyncJoinResult.RoomLimitReached);
+        metrics.AdmissionControllerFailed();
 
         var snapshot = metrics.Snapshot();
 
@@ -63,6 +66,9 @@ public sealed class SyncMetricsTests
         Assert.Equal(1, snapshot.PresenceTrackerLeaveFailed);
         Assert.Equal(1, snapshot.PresenceTrackerCountFailed);
         Assert.Equal(1, snapshot.PresenceTrackerHeartbeatFailed);
+        Assert.Equal(1, snapshot.AdmissionRejectedRoomFull);
+        Assert.Equal(1, snapshot.AdmissionRejectedRoomLimit);
+        Assert.Equal(1, snapshot.AdmissionControllerFailed);
     }
 
     [Fact]
@@ -75,6 +81,7 @@ public sealed class SyncMetricsTests
         metrics.BackplanePublishAttempted();
         metrics.BackplanePublishSucceeded(remoteSubscribers: 3);
         metrics.BackplaneSubscribeSucceeded();
+        metrics.AdmissionRejected(SyncJoinResult.RoomFull);
 
         var text = metrics.RenderPrometheus(
             new SyncRoomStats(Rooms: 3, Connections: 7),
@@ -98,5 +105,8 @@ public sealed class SyncMetricsTests
         Assert.Contains("mmn_sync_backplane_subscribe_succeeded_total 1", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_presence_tracker_count_failed_total 0", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_presence_tracker_heartbeat_failed_total 0", text, StringComparison.Ordinal);
+        Assert.Contains("mmn_sync_admission_rejected_room_full_total 1", text, StringComparison.Ordinal);
+        Assert.Contains("mmn_sync_admission_rejected_room_limit_total 0", text, StringComparison.Ordinal);
+        Assert.Contains("mmn_sync_admission_controller_failed_total 0", text, StringComparison.Ordinal);
     }
 }

@@ -18,6 +18,13 @@ var broadcaster = new SyncBroadcaster<WebSocket>(
     options.MaxFanoutConcurrency,
     metrics);
 await using var backplane = await SyncBackplaneFactory.CreateAsync(options, metrics, app.Logger);
+var admissionCoordinator = new SyncAdmissionCoordinator<WebSocket>(
+    rooms,
+    backplane as ISyncAdmissionController ?? NoopSyncAdmissionController.Instance,
+    options.MaxRooms,
+    options.MaxPeersPerRoom,
+    metrics,
+    app.Logger);
 var backplaneBridge = new SyncBackplaneBridge<WebSocket>(
     options.InstanceId,
     rooms,
@@ -75,6 +82,7 @@ async Task HandleSyncRequestAsync(HttpContext context)
     using var ws = await context.WebSockets.AcceptWebSocketAsync();
     var connectionId = Guid.NewGuid();
     string? room = null;
+    var joined = false;
 
     try
     {
@@ -103,7 +111,7 @@ async Task HandleSyncRequestAsync(HttpContext context)
         }
 
         room = requestedRoom;
-        var joinResult = rooms.TryJoin(room, connectionId, ws);
+        var joinResult = await admissionCoordinator.TryJoinAsync(room, connectionId, ws, context.RequestAborted);
         if (joinResult is not SyncJoinResult.Joined)
         {
             metrics.JoinRejected();
@@ -111,6 +119,7 @@ async Task HandleSyncRequestAsync(HttpContext context)
             return;
         }
 
+        joined = true;
         if (app.Logger.IsEnabled(LogLevel.Information))
         {
             SyncLog.PeerConnected(app.Logger, room, rooms.Stats.Connections);
@@ -185,9 +194,9 @@ async Task HandleSyncRequestAsync(HttpContext context)
     }
     finally
     {
-        if (room is not null)
+        if (joined && room is not null)
         {
-            rooms.Leave(room, connectionId);
+            await admissionCoordinator.PeerLeftAsync(room, connectionId, CancellationToken.None);
             await presenceCoordinator.PeerLeftAsync(room, connectionId, CancellationToken.None);
             await backplaneBridge.ReleaseIfRoomEmptyAsync(room);
             if (app.Logger.IsEnabled(LogLevel.Information))
@@ -217,6 +226,7 @@ app.MapGet("/health", () =>
         options.MaxFanoutConcurrency,
         backplaneEnabled = backplane.IsEnabled,
         distributedPresenceEnabled = presenceCoordinator.IsDistributed,
+        distributedAdmissionEnabled = admissionCoordinator.IsDistributed,
         activeBackplaneSubscriptions = backplaneBridge.SubscriptionCount,
         options.BackplaneChannelPrefix,
         options.InstanceId,

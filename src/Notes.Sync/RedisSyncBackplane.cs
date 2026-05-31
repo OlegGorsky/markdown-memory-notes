@@ -5,9 +5,72 @@ using StackExchange.Redis;
 
 namespace Notes.Sync;
 
-public sealed class RedisSyncBackplane : ISyncBackplane, ISyncPresenceTracker
+public sealed class RedisSyncBackplane : ISyncBackplane, ISyncPresenceTracker, ISyncAdmissionController
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private const string AdmissionJoinScript = """
+        local roomsKey = KEYS[1]
+        local roomKey = KEYS[2]
+        local room = ARGV[1]
+        local member = ARGV[2]
+        local expiry = tonumber(ARGV[3])
+        local now = tonumber(ARGV[4])
+        local maxRooms = tonumber(ARGV[5])
+        local maxPeers = tonumber(ARGV[6])
+        local ttlSeconds = tonumber(ARGV[7])
+
+        redis.call('ZREMRANGEBYSCORE', roomKey, '-inf', now)
+        redis.call('ZREMRANGEBYSCORE', roomsKey, '-inf', now)
+
+        if redis.call('ZSCORE', roomKey, member) then
+            redis.call('ZADD', roomKey, expiry, member)
+            redis.call('EXPIRE', roomKey, ttlSeconds)
+            redis.call('ZADD', roomsKey, expiry, room)
+            redis.call('EXPIRE', roomsKey, ttlSeconds)
+            return 0
+        end
+
+        local peerCount = redis.call('ZCARD', roomKey)
+        if peerCount == 0 then
+            local roomCount = redis.call('ZCARD', roomsKey)
+            if roomCount >= maxRooms then
+                return 1
+            end
+        end
+
+        if peerCount >= maxPeers then
+            return 2
+        end
+
+        redis.call('ZADD', roomKey, expiry, member)
+        redis.call('EXPIRE', roomKey, ttlSeconds)
+        redis.call('ZADD', roomsKey, expiry, room)
+        redis.call('EXPIRE', roomsKey, ttlSeconds)
+        return 0
+        """;
+    private const string AdmissionLeaveScript = """
+        local roomsKey = KEYS[1]
+        local roomKey = KEYS[2]
+        local room = ARGV[1]
+        local member = ARGV[2]
+        local now = tonumber(ARGV[3])
+        local expiry = tonumber(ARGV[4])
+        local ttlSeconds = tonumber(ARGV[5])
+
+        local removed = redis.call('ZREM', roomKey, member)
+        redis.call('ZREMRANGEBYSCORE', roomKey, '-inf', now)
+
+        if redis.call('ZCARD', roomKey) == 0 then
+            redis.call('DEL', roomKey)
+            redis.call('ZREM', roomsKey, room)
+        else
+            redis.call('ZADD', roomsKey, expiry, room)
+            redis.call('EXPIRE', roomKey, ttlSeconds)
+            redis.call('EXPIRE', roomsKey, ttlSeconds)
+        end
+
+        return removed
+        """;
     private static readonly TimeSpan PresenceTtl = TimeSpan.FromSeconds(90);
     private static readonly TimeSpan PresenceHeartbeatInterval = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan PresenceKeyTtl = TimeSpan.FromMinutes(5);
@@ -124,6 +187,36 @@ public sealed class RedisSyncBackplane : ISyncBackplane, ISyncPresenceTracker
         await AddOrRefreshPresenceMemberAsync(room, member);
     }
 
+    public async Task<SyncJoinResult> TryJoinAsync(
+        string room,
+        Guid connectionId,
+        int maxRooms,
+        int maxPeersPerRoom,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(room);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxRooms);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxPeersPerRoom);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var now = CurrentUnixMilliseconds();
+        var expiry = now + (long)PresenceTtl.TotalMilliseconds;
+        var result = await database.ScriptEvaluateAsync(
+            AdmissionJoinScript,
+            new RedisKey[] { PresenceRoomsKey(), PresenceKey(room) },
+            new RedisValue[]
+            {
+                room,
+                PresenceMember(connectionId),
+                expiry,
+                now,
+                maxRooms,
+                maxPeersPerRoom,
+                (long)PresenceKeyTtl.TotalSeconds
+            });
+        return AdmissionResultFromRedis(result);
+    }
+
     public async Task PeerLeftAsync(string room, Guid connectionId, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(room);
@@ -138,7 +231,7 @@ public sealed class RedisSyncBackplane : ISyncBackplane, ISyncPresenceTracker
             }
         }
 
-        await database.SortedSetRemoveAsync(PresenceKey(room), PresenceMember(connectionId));
+        await RemovePresenceMemberAsync(room, PresenceMember(connectionId));
     }
 
     public async Task<int?> GetPeerCountAsync(string room, CancellationToken cancellationToken)
@@ -169,6 +262,11 @@ public sealed class RedisSyncBackplane : ISyncBackplane, ISyncPresenceTracker
         return $"{channelPrefix}:presence:{room}";
     }
 
+    private RedisKey PresenceRoomsKey()
+    {
+        return $"{channelPrefix}:presence:rooms";
+    }
+
     private RedisValue PresenceMember(Guid connectionId)
     {
         return $"{instanceId}:{connectionId:N}";
@@ -176,15 +274,27 @@ public sealed class RedisSyncBackplane : ISyncBackplane, ISyncPresenceTracker
 
     private Task AddOrRefreshPresenceMemberAsync(string room, RedisValue member)
     {
-        var key = PresenceKey(room);
         var score = CurrentUnixMilliseconds() + PresenceTtl.TotalMilliseconds;
-        return AddOrRefreshPresenceMembersAsync(key, [new SortedSetEntry(member, score)]);
+        return AddOrRefreshPresenceMembersAsync(room, [new SortedSetEntry(member, score)], score);
     }
 
-    private async Task AddOrRefreshPresenceMembersAsync(RedisKey key, SortedSetEntry[] entries)
+    private async Task AddOrRefreshPresenceMembersAsync(string room, SortedSetEntry[] entries, double roomExpiryScore)
     {
+        var key = PresenceKey(room);
         await database.SortedSetAddAsync(key, entries);
         await database.KeyExpireAsync(key, PresenceKeyTtl);
+        await database.SortedSetAddAsync(PresenceRoomsKey(), room, roomExpiryScore);
+        await database.KeyExpireAsync(PresenceRoomsKey(), PresenceKeyTtl);
+    }
+
+    private async Task RemovePresenceMemberAsync(string room, RedisValue member)
+    {
+        var now = CurrentUnixMilliseconds();
+        var expiry = now + (long)PresenceTtl.TotalMilliseconds;
+        await database.ScriptEvaluateAsync(
+            AdmissionLeaveScript,
+            new RedisKey[] { PresenceRoomsKey(), PresenceKey(room) },
+            new RedisValue[] { room, member, now, expiry, (long)PresenceKeyTtl.TotalSeconds });
     }
 
     private async Task RunPresenceHeartbeatAsync()
@@ -222,7 +332,7 @@ public sealed class RedisSyncBackplane : ISyncBackplane, ISyncPresenceTracker
                 continue;
             }
 
-            await AddOrRefreshPresenceMembersAsync(PresenceKey(room.Key), entries);
+            await AddOrRefreshPresenceMembersAsync(room.Key, entries, score);
         }
     }
 
@@ -240,9 +350,20 @@ public sealed class RedisSyncBackplane : ISyncBackplane, ISyncPresenceTracker
         presenceHeartbeatStop.Dispose();
     }
 
-    private static double CurrentUnixMilliseconds()
+    private static long CurrentUnixMilliseconds()
     {
         return DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+    }
+
+    private static SyncJoinResult AdmissionResultFromRedis(RedisResult result)
+    {
+        return result.ToString() switch
+        {
+            "0" => SyncJoinResult.Joined,
+            "1" => SyncJoinResult.RoomLimitReached,
+            "2" => SyncJoinResult.RoomFull,
+            var value => throw new InvalidOperationException($"Unexpected Redis admission result '{value}'.")
+        };
     }
 
     private sealed class RedisSubscription : IDisposable

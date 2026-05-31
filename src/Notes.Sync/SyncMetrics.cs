@@ -29,6 +29,9 @@ public sealed class SyncMetrics
     private long presenceTrackerLeaveFailed;
     private long presenceTrackerCountFailed;
     private long presenceTrackerHeartbeatFailed;
+    private long admissionRejectedRoomFull;
+    private long admissionRejectedRoomLimit;
+    private long admissionControllerFailed;
 
     public void MessageReceived()
     {
@@ -157,6 +160,23 @@ public sealed class SyncMetrics
         Interlocked.Increment(ref presenceTrackerHeartbeatFailed);
     }
 
+    public void AdmissionRejected(SyncJoinResult result)
+    {
+        if (result is SyncJoinResult.RoomFull)
+        {
+            Interlocked.Increment(ref admissionRejectedRoomFull);
+        }
+        else if (result is SyncJoinResult.RoomLimitReached)
+        {
+            Interlocked.Increment(ref admissionRejectedRoomLimit);
+        }
+    }
+
+    public void AdmissionControllerFailed()
+    {
+        Interlocked.Increment(ref admissionControllerFailed);
+    }
+
     public SyncMetricSnapshot Snapshot()
     {
         return new SyncMetricSnapshot(
@@ -184,7 +204,10 @@ public sealed class SyncMetrics
             Interlocked.Read(ref presenceTrackerJoinFailed),
             Interlocked.Read(ref presenceTrackerLeaveFailed),
             Interlocked.Read(ref presenceTrackerCountFailed),
-            Interlocked.Read(ref presenceTrackerHeartbeatFailed));
+            Interlocked.Read(ref presenceTrackerHeartbeatFailed),
+            Interlocked.Read(ref admissionRejectedRoomFull),
+            Interlocked.Read(ref admissionRejectedRoomLimit),
+            Interlocked.Read(ref admissionControllerFailed));
     }
 
     public string RenderPrometheus(
@@ -225,6 +248,9 @@ public sealed class SyncMetrics
             mmn_sync_presence_tracker_leave_failed_total {snapshot.PresenceTrackerLeaveFailed}
             mmn_sync_presence_tracker_count_failed_total {snapshot.PresenceTrackerCountFailed}
             mmn_sync_presence_tracker_heartbeat_failed_total {snapshot.PresenceTrackerHeartbeatFailed}
+            mmn_sync_admission_rejected_room_full_total {snapshot.AdmissionRejectedRoomFull}
+            mmn_sync_admission_rejected_room_limit_total {snapshot.AdmissionRejectedRoomLimit}
+            mmn_sync_admission_controller_failed_total {snapshot.AdmissionControllerFailed}
 
             """);
     }
@@ -255,4 +281,7 @@ public sealed record SyncMetricSnapshot(
     long PresenceTrackerJoinFailed,
     long PresenceTrackerLeaveFailed,
     long PresenceTrackerCountFailed,
-    long PresenceTrackerHeartbeatFailed);
+    long PresenceTrackerHeartbeatFailed,
+    long AdmissionRejectedRoomFull,
+    long AdmissionRejectedRoomLimit,
+    long AdmissionControllerFailed);

@@ -48,4 +48,10 @@ public static partial class SyncLog
 
     [LoggerMessage(EventId = 15, Level = LogLevel.Warning, Message = "Sync presence tracker heartbeat failed")]
     public static partial void PresenceTrackerHeartbeatFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 16, Level = LogLevel.Warning, Message = "Sync admission controller join failed. Room={Room}")]
+    public static partial void AdmissionControllerJoinFailed(ILogger logger, Exception exception, string room);
+
+    [LoggerMessage(EventId = 17, Level = LogLevel.Warning, Message = "Sync admission controller leave failed. Room={Room}")]
+    public static partial void AdmissionControllerLeaveFailed(ILogger logger, Exception exception, string room);
 }
