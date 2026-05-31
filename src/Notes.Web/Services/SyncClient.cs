@@ -1,6 +1,7 @@
 using Microsoft.JSInterop;
 using Notes.Core.Files;
 using Notes.Core.Sync;
+using System.Text;
 using System.Text.Json;
 
 namespace MemoryNotes.Web.Services;
@@ -10,10 +11,12 @@ public sealed class SyncClient : IAsyncDisposable
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private const int DefaultMaxQueuedOperations = 256;
     private const int DefaultMaxInFlightOperations = 16;
+    private const int DefaultMaxOutgoingMessageBytes = 64 * 1024;
     private static readonly TimeSpan DefaultAckTimeout = TimeSpan.FromSeconds(10);
 
     private readonly IJSRuntime js;
     private readonly int maxQueuedOperations;
+    private readonly int maxOutgoingMessageBytes;
     private readonly TimeSpan ackTimeout;
     private readonly Lock pendingGate = new();
     private readonly Dictionary<string, SyncMessage> pendingByPath = new(StringComparer.Ordinal);
@@ -46,13 +49,20 @@ public sealed class SyncClient : IAsyncDisposable
     }
 
     public SyncClient(IJSRuntime js, int maxQueuedOperations, TimeSpan ackTimeout)
+        : this(js, maxQueuedOperations, ackTimeout, DefaultMaxOutgoingMessageBytes)
+    {
+    }
+
+    public SyncClient(IJSRuntime js, int maxQueuedOperations, TimeSpan ackTimeout, int maxOutgoingMessageBytes)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxQueuedOperations);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(ackTimeout, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxOutgoingMessageBytes);
 
         this.js = js;
         this.maxQueuedOperations = maxQueuedOperations;
         this.ackTimeout = ackTimeout;
+        this.maxOutgoingMessageBytes = maxOutgoingMessageBytes;
     }
 
     public async Task ConnectAsync(string room, Func<string, string?, Task> onFileReceived)
@@ -429,6 +439,8 @@ public sealed class SyncClient : IAsyncDisposable
             return;
         }
 
+        ValidateOutgoingMessageSize(message, "content");
+
         lock (pendingGate)
         {
             if (pendingByPath.TryGetValue(message.Path, out var previousMessage))
@@ -449,6 +461,15 @@ public sealed class SyncClient : IAsyncDisposable
             }
 
             pendingByPath[message.Path] = message;
+        }
+    }
+
+    private void ValidateOutgoingMessageSize(SyncMessage message, string paramName)
+    {
+        var json = JsonSerializer.Serialize(message, JsonOptions);
+        if (Encoding.UTF8.GetByteCount(json) > maxOutgoingMessageBytes)
+        {
+            throw new ArgumentException("Sync message is too large.", paramName);
         }
     }
 

@@ -130,6 +130,26 @@ public sealed class SyncClientTests
     }
 
     [Fact]
+    public async Task SendFileAsyncRejectsOversizedOutgoingMessages()
+    {
+        var js = new CapturingJsRuntime();
+        await using var client = new SyncClient(
+            js,
+            maxQueuedOperations: 256,
+            ackTimeout: TimeSpan.FromSeconds(10),
+            maxOutgoingMessageBytes: 256);
+        await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "AbCdEfGhIjKlMnOpQrStUv", (_, _) => Task.CompletedTask);
+        await client.OnStatus("connected");
+        await client.OnMessage("""{"type":"presence","peerCount":2}""");
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
+            client.SendFileAsync("notes/project.md", new string('x', 512)));
+
+        Assert.Equal("content", exception.ParamName);
+        Assert.Empty(js.Module.SentMessages);
+    }
+
+    [Fact]
     public async Task OnMessageIgnoresInvalidBaseHash()
     {
         await using var client = new SyncClient(new CapturingJsRuntime());
