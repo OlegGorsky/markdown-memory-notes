@@ -15,12 +15,23 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0'
+          dotnet-version: '10.0.x'
+
+      - name: Restore solution
+        run: dotnet restore MarkdownMemoryNotes.sln
+
+      - name: Run .NET tests
+        run: dotnet test MarkdownMemoryNotes.sln --no-restore
+
+      - name: Run browser sync tests
+        run: node tests/Notes.Web.Tests/Services/sync-client-js-tests.mjs
+
+      - name: Install WASM tools
+        run: dotnet workload install wasm-tools
 
       - name: Publish Blazor WASM
         run: |
-          dotnet restore src/Notes.Web/Notes.Web.csproj
-          dotnet publish src/Notes.Web/Notes.Web.csproj -c Release -o publish/web
+          dotnet publish src/Notes.Web/Notes.Web.csproj -c Release -o publish/web --no-restore
 
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v4
