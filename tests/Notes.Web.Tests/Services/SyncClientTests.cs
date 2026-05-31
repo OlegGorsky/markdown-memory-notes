@@ -145,6 +145,27 @@ public sealed class SyncClientTests
         Assert.Empty(received);
     }
 
+    [Theory]
+    [InlineData("""{"type":"file","Type":"delete","path":"notes/project.md","content":"# Project"}""")]
+    [InlineData("""{"type":"file","path":"notes/project.md","Path":"notes/other.md","content":"# Project"}""")]
+    [InlineData("""{"type":"file","path":"notes/project.md","content":"# Project","Content":"# Other"}""")]
+    [InlineData("""{"type":"file","path":"notes/project.md","content":"# Project","baseHash":null,"BaseHash":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}""")]
+    [InlineData("""{"type":"file","path":"notes/project.md","content":"# Project","messageId":null,"MessageId":"0123456789abcdef0123456789abcdef"}""")]
+    public async Task OnMessageRejectsDuplicateProtocolProperties(string json)
+    {
+        await using var client = new SyncClient(new CapturingJsRuntime());
+        var received = new List<(string Path, string? Content, string? BaseHash)>();
+        await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "AbCdEfGhIjKlMnOpQrStUv", (path, content, baseHash) =>
+        {
+            received.Add((path, content, baseHash));
+            return Task.CompletedTask;
+        });
+
+        await client.OnMessage(json);
+
+        Assert.Empty(received);
+    }
+
     [Fact]
     public async Task SendFileAsyncQueuesLatestChangeAndFlushesWhenPeerAppears()
     {

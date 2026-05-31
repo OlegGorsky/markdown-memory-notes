@@ -135,6 +135,11 @@ public sealed class SyncClient : IAsyncDisposable
     [JSInvokable]
     public async Task OnMessage(string data)
     {
+        if (HasDuplicateProtocolProperty(data))
+        {
+            return;
+        }
+
         if (SyncPresenceMessage.TryParse(data, out var peerCount))
         {
             PeerCount = peerCount;
@@ -185,6 +190,48 @@ public sealed class SyncClient : IAsyncDisposable
             }
         }
         catch (JsonException) { }
+    }
+
+    private static bool HasDuplicateProtocolProperty(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind is not JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            return HasDuplicateProperty(document.RootElement, "type") ||
+                   HasDuplicateProperty(document.RootElement, "path") ||
+                   HasDuplicateProperty(document.RootElement, "content") ||
+                   HasDuplicateProperty(document.RootElement, "baseHash") ||
+                   HasDuplicateProperty(document.RootElement, "messageId") ||
+                   HasDuplicateProperty(document.RootElement, "peerCount");
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool HasDuplicateProperty(JsonElement element, string name)
+    {
+        var count = 0;
+        foreach (var candidate in element.EnumerateObject())
+        {
+            if (candidate.NameEquals(name) ||
+                string.Equals(candidate.Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                count++;
+                if (count > 1)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     [JSInvokable]
