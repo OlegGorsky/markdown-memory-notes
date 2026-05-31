@@ -170,6 +170,11 @@ public sealed class SyncPresenceCoordinatorTests
         public bool IsEnabled => true;
         public List<(string Room, SyncBackplaneMessage Message)> Published { get; } = new();
 
+        public Task<SyncBackplaneHealth> CheckHealthAsync(CancellationToken cancellationToken)
+        {
+            return Task.FromResult(SyncBackplaneHealth.Available(TimeSpan.FromMilliseconds(1)));
+        }
+
         public Task<IDisposable> SubscribeAsync(
             string room,
             Func<SyncBackplaneMessage, CancellationToken, Task> onMessage,

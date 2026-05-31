@@ -54,4 +54,5 @@ public static partial class SyncLog
 
     [LoggerMessage(EventId = 17, Level = LogLevel.Warning, Message = "Sync admission controller leave failed. Room={Room}")]
     public static partial void AdmissionControllerLeaveFailed(ILogger logger, Exception exception, string room);
+
 }

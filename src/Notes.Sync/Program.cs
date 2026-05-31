@@ -208,13 +208,14 @@ async Task HandleSyncRequestAsync(HttpContext context)
     }
 }
 
-app.MapGet("/health", () =>
+app.MapGet("/health", async (CancellationToken cancellationToken) =>
 {
     var stats = rooms.Stats;
     var counters = metrics.Snapshot();
+    var backplaneHealth = await backplane.CheckHealthAsync(cancellationToken);
     return Results.Ok(new
     {
-        status = "ok",
+        status = backplaneHealth.Healthy ? "ok" : "degraded",
         rooms = stats.Rooms,
         connections = stats.Connections,
         activeWebSockets = connections.ActiveConnections,
@@ -226,6 +227,8 @@ app.MapGet("/health", () =>
         options.MaxMessagesPerMinute,
         options.MaxFanoutConcurrency,
         backplaneEnabled = backplane.IsEnabled,
+        backplaneHealthy = backplaneHealth.Healthy,
+        backplaneHealth,
         distributedPresenceEnabled = presenceCoordinator.IsDistributed,
         distributedAdmissionEnabled = admissionCoordinator.IsDistributed,
         activeBackplaneSubscriptions = backplaneBridge.SubscriptionCount,

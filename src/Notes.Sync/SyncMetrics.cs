@@ -25,6 +25,7 @@ public sealed class SyncMetrics
     private long backplaneMessagesIgnored;
     private long backplaneInvalidPayload;
     private long backplaneReceiveFailed;
+    private long backplaneHealthCheckFailed;
     private long presenceTrackerJoinFailed;
     private long presenceTrackerLeaveFailed;
     private long presenceTrackerCountFailed;
@@ -140,6 +141,11 @@ public sealed class SyncMetrics
         Interlocked.Increment(ref backplaneReceiveFailed);
     }
 
+    public void BackplaneHealthCheckFailed()
+    {
+        Interlocked.Increment(ref backplaneHealthCheckFailed);
+    }
+
     public void PresenceTrackerJoinFailed()
     {
         Interlocked.Increment(ref presenceTrackerJoinFailed);
@@ -201,6 +207,7 @@ public sealed class SyncMetrics
             Interlocked.Read(ref backplaneMessagesIgnored),
             Interlocked.Read(ref backplaneInvalidPayload),
             Interlocked.Read(ref backplaneReceiveFailed),
+            Interlocked.Read(ref backplaneHealthCheckFailed),
             Interlocked.Read(ref presenceTrackerJoinFailed),
             Interlocked.Read(ref presenceTrackerLeaveFailed),
             Interlocked.Read(ref presenceTrackerCountFailed),
@@ -244,6 +251,7 @@ public sealed class SyncMetrics
             mmn_sync_backplane_messages_ignored_total {snapshot.BackplaneMessagesIgnored}
             mmn_sync_backplane_invalid_payload_total {snapshot.BackplaneInvalidPayload}
             mmn_sync_backplane_receive_failed_total {snapshot.BackplaneReceiveFailed}
+            mmn_sync_backplane_health_check_failed_total {snapshot.BackplaneHealthCheckFailed}
             mmn_sync_presence_tracker_join_failed_total {snapshot.PresenceTrackerJoinFailed}
             mmn_sync_presence_tracker_leave_failed_total {snapshot.PresenceTrackerLeaveFailed}
             mmn_sync_presence_tracker_count_failed_total {snapshot.PresenceTrackerCountFailed}
@@ -278,6 +286,7 @@ public sealed record SyncMetricSnapshot(
     long BackplaneMessagesIgnored,
     long BackplaneInvalidPayload,
     long BackplaneReceiveFailed,
+    long BackplaneHealthCheckFailed,
     long PresenceTrackerJoinFailed,
     long PresenceTrackerLeaveFailed,
     long PresenceTrackerCountFailed,

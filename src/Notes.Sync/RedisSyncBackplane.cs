@@ -74,6 +74,7 @@ public sealed class RedisSyncBackplane : ISyncBackplane, ISyncPresenceTracker, I
     private static readonly TimeSpan PresenceTtl = TimeSpan.FromSeconds(90);
     private static readonly TimeSpan PresenceHeartbeatInterval = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan PresenceKeyTtl = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan HealthCheckTimeout = TimeSpan.FromSeconds(2);
     private readonly ConnectionMultiplexer connection;
     private readonly ISubscriber subscriber;
     private readonly IDatabase database;
@@ -104,6 +105,22 @@ public sealed class RedisSyncBackplane : ISyncBackplane, ISyncPresenceTracker, I
 
     public bool IsEnabled => true;
     public bool IsDistributed => true;
+
+    public async Task<SyncBackplaneHealth> CheckHealthAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        try
+        {
+            var latency = await database.PingAsync().WaitAsync(HealthCheckTimeout, cancellationToken);
+            return SyncBackplaneHealth.Available(latency);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException ||
+                                          !cancellationToken.IsCancellationRequested)
+        {
+            metrics.BackplaneHealthCheckFailed();
+            return SyncBackplaneHealth.Unavailable;
+        }
+    }
 
     public static async Task<RedisSyncBackplane> ConnectAsync(
         string connectionString,

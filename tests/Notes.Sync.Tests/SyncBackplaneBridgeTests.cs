@@ -184,6 +184,11 @@ public sealed class SyncBackplaneBridgeTests
         public int SubscribeCount { get; private set; }
         public int DisposeCount { get; private set; }
 
+        public Task<SyncBackplaneHealth> CheckHealthAsync(CancellationToken cancellationToken)
+        {
+            return Task.FromResult(SyncBackplaneHealth.Available(TimeSpan.FromMilliseconds(1)));
+        }
+
         public Task<IDisposable> SubscribeAsync(
             string room,
             Func<SyncBackplaneMessage, CancellationToken, Task> onMessage,
@@ -211,6 +216,11 @@ public sealed class SyncBackplaneBridgeTests
     private sealed class ThrowingSyncBackplane : ISyncBackplane
     {
         public bool IsEnabled => true;
+
+        public Task<SyncBackplaneHealth> CheckHealthAsync(CancellationToken cancellationToken)
+        {
+            return Task.FromResult(SyncBackplaneHealth.Unavailable);
+        }
 
         public Task<IDisposable> SubscribeAsync(
             string room,
