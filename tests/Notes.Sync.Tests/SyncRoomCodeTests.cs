@@ -6,10 +6,9 @@ namespace Notes.Sync.Tests;
 public sealed class SyncRoomCodeTests
 {
     [Theory]
-    [InlineData("ABCD1234")]
-    [InlineData("ROOM-2026")]
-    [InlineData("team_notes")]
-    public void IsValidAcceptsBoundedRoomCodes(string room)
+    [InlineData("AbCdEfGhIjKlMnOpQrStUv")]
+    [InlineData("room-2026_ABCDEFGHijkl")]
+    public void IsValidAcceptsHighEntropyRoomCodes(string room)
     {
         Assert.True(SyncRoomCode.IsValid(room));
     }
@@ -17,6 +16,8 @@ public sealed class SyncRoomCodeTests
     [Theory]
     [InlineData("")]
     [InlineData("abc")]
+    [InlineData("ABCD1234")]
+    [InlineData("team_notes")]
     [InlineData("room with space")]
     [InlineData("../secret")]
     [InlineData("01234567890123456789012345678901234567890123456789012345678901234")]

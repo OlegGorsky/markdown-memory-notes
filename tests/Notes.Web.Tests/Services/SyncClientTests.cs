@@ -27,7 +27,7 @@ public sealed class SyncClientTests
     {
         await using var client = new SyncClient(new CapturingJsRuntime());
         var received = new List<(string Path, string? Content)>();
-        await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "room-code", (path, content) =>
+        await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "AbCdEfGhIjKlMnOpQrStUv", (path, content) =>
         {
             received.Add((path, content));
             return Task.CompletedTask;
@@ -38,6 +38,19 @@ public sealed class SyncClientTests
         var item = Assert.Single(received);
         Assert.Equal("notes/project.md", item.Path);
         Assert.Equal("# Project", item.Content);
+    }
+
+    [Fact]
+    public async Task ConnectAsyncRejectsWeakRoomCodesBeforeOpeningSocket()
+    {
+        var js = new CapturingJsRuntime();
+        await using var client = new SyncClient(js);
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
+            client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "ABCD1234", (_, _) => Task.CompletedTask));
+
+        Assert.Equal("room", exception.ParamName);
+        Assert.Equal(0, js.Module.ConnectCalls);
     }
 
     private sealed class CapturingJsRuntime : IJSRuntime
@@ -66,6 +79,7 @@ public sealed class SyncClientTests
     private sealed class CapturingJsObjectReference : IJSObjectReference
     {
         public List<string> SentMessages { get; } = new();
+        public int ConnectCalls { get; private set; }
 
         public ValueTask DisposeAsync()
         {
@@ -82,6 +96,11 @@ public sealed class SyncClientTests
 
             if (identifier is "connect" or "disconnect")
             {
+                if (identifier == "connect")
+                {
+                    ConnectCalls++;
+                }
+
                 return new ValueTask<TValue>(default(TValue)!);
             }
 

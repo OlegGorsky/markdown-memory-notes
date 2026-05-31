@@ -1,5 +1,6 @@
 using Microsoft.JSInterop;
 using Notes.Core.Files;
+using Notes.Core.Sync;
 using System.Text.Json;
 
 namespace MemoryNotes.Web.Services;
@@ -25,6 +26,7 @@ public sealed class SyncClient : IAsyncDisposable
 
     public async Task ConnectAsync(string room, Func<string, string?, Task> onFileReceived)
     {
+        ValidateRoom(room);
         var mod = await ModuleAsync();
         var serverUrl = await mod.InvokeAsync<string>("getDefaultSyncUrl");
         await ConnectAsync(new Uri(serverUrl), room, onFileReceived);
@@ -32,6 +34,7 @@ public sealed class SyncClient : IAsyncDisposable
 
     public async Task ConnectAsync(Uri serverUrl, string room, Func<string, string?, Task> onFileReceived)
     {
+        ValidateRoom(room);
         _room = room;
         _onFileReceived = onFileReceived;
         _selfRef = DotNetObjectReference.Create(this);
@@ -108,6 +111,14 @@ public sealed class SyncClient : IAsyncDisposable
     private async Task<IJSObjectReference> ModuleAsync()
     {
         return _module ??= await js.InvokeAsync<IJSObjectReference>("import", "./js/sync-client.js");
+    }
+
+    private static void ValidateRoom(string room)
+    {
+        if (!SyncPairingCode.IsValid(room))
+        {
+            throw new ArgumentException("Sync room code is not a valid pairing code.", nameof(room));
+        }
     }
 
     public async ValueTask DisposeAsync()

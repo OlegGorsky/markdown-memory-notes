@@ -368,6 +368,12 @@ else
     {
         if (string.IsNullOrWhiteSpace(_syncCodeInput)) return;
         var code = _syncCodeInput.Trim();
+        if (!global::Notes.Core.Sync.SyncPairingCode.IsValid(code))
+        {
+            _notice = "Синхронизация недоступна.";
+            return;
+        }
+
         _syncCodeInput = "";
         _connectNewModal = false;
 
@@ -423,6 +429,12 @@ else
     private async Task ReconnectSyncAsync(VaultEntry vault)
     {
         if (vault.SyncCode is null) return;
+        if (!global::Notes.Core.Sync.SyncPairingCode.IsValid(vault.SyncCode))
+        {
+            _notice = "Синхронизация недоступна.";
+            return;
+        }
+
         try
         {
             await ConnectSyncRoomAsync(vault.SyncCode);
@@ -437,6 +449,12 @@ else
     {
         if (string.IsNullOrWhiteSpace(_syncCodeInput)) return;
         var code = _syncCodeInput.Trim();
+        if (!global::Notes.Core.Sync.SyncPairingCode.IsValid(code))
+        {
+            _notice = "Синхронизация недоступна.";
+            return;
+        }
+
         var vault = _vaults.FirstOrDefault(v => v.Id == _syncModalVault);
         if (vault is null) return;
         var updated = vault with { SyncCode = code };
