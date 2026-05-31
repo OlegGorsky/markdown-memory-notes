@@ -66,6 +66,11 @@ public sealed class SyncRoomRegistry<TConnection>
             : Array.Empty<KeyValuePair<Guid, TConnection>>();
     }
 
+    public bool Contains(string room, Guid connectionId)
+    {
+        return rooms.TryGetValue(room, out var peers) && peers.ContainsKey(connectionId);
+    }
+
     public void Leave(string room, Guid connectionId)
     {
         lock (gate)

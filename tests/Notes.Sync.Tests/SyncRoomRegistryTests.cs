@@ -56,4 +56,17 @@ public sealed class SyncRoomRegistryTests
         Assert.Equal(0, stats.Rooms);
         Assert.Equal(0, stats.Connections);
     }
+
+    [Fact]
+    public void ContainsReturnsFalseAfterPeerLeavesRoom()
+    {
+        var registry = new SyncRoomRegistry<string>(maxRooms: 1, maxPeersPerRoom: 2);
+        var id = Guid.NewGuid();
+        Assert.Equal(SyncJoinResult.Joined, registry.TryJoin(RoomOne, id, "peer-a"));
+        Assert.True(registry.Contains(RoomOne, id));
+
+        registry.Leave(RoomOne, id);
+
+        Assert.False(registry.Contains(RoomOne, id));
+    }
 }

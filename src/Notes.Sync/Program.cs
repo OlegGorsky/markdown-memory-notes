@@ -137,6 +137,12 @@ async Task HandleSyncRequestAsync(HttpContext context)
                 break;
             }
 
+            if (!rooms.Contains(room, connectionId))
+            {
+                await CloseSafeAsync(ws, WebSocketCloseStatus.PolicyViolation, "Peer removed", context.RequestAborted);
+                break;
+            }
+
             if (!rateLimit.TryConsume())
             {
                 metrics.MessageRateLimited();
