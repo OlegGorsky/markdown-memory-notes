@@ -85,7 +85,7 @@ public sealed class SyncClient : IAsyncDisposable
         PeerCount = 0;
         Status = null;
         StateChanged?.Invoke(this, EventArgs.Empty);
-        _selfRef = DotNetObjectReference.Create(this);
+        _selfRef ??= DotNetObjectReference.Create(this);
         var mod = await ModuleAsync();
         await mod.InvokeVoidAsync("connect", serverUrl.ToString(), room,
             _selfRef, nameof(OnMessage), _selfRef, nameof(OnStatus));

@@ -199,6 +199,19 @@ public sealed class SyncClientTests
     }
 
     [Fact]
+    public async Task ConnectAsyncReusesDotNetCallbackReferenceAcrossReconnects()
+    {
+        var js = new CapturingJsRuntime();
+        await using var client = new SyncClient(js);
+
+        await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "AbCdEfGhIjKlMnOpQrStUv", (_, _) => Task.CompletedTask);
+        await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "AbCdEfGhIjKlMnOpQrStUv", (_, _) => Task.CompletedTask);
+
+        Assert.Equal(2, js.Module.ConnectCallbackReferences.Count);
+        Assert.Same(js.Module.ConnectCallbackReferences[0], js.Module.ConnectCallbackReferences[1]);
+    }
+
+    [Fact]
     public async Task PresenceBeforeConnectedStatusStillFlushesQueuedChanges()
     {
         var js = new CapturingJsRuntime();
@@ -380,6 +393,7 @@ public sealed class SyncClientTests
     private sealed class CapturingJsObjectReference : IJSObjectReference
     {
         public List<string> SentMessages { get; } = new();
+        public List<object?> ConnectCallbackReferences { get; } = new();
         public int ConnectCalls { get; private set; }
         public bool SendReportsOpen { get; set; } = true;
 
@@ -410,6 +424,11 @@ public sealed class SyncClientTests
                 if (identifier == "connect")
                 {
                     ConnectCalls++;
+                    if (args is [_, _, var onMessageReference, _, var onStatusReference, _])
+                    {
+                        Assert.Same(onMessageReference, onStatusReference);
+                        ConnectCallbackReferences.Add(onMessageReference);
+                    }
                 }
 
                 return new ValueTask<TValue>(default(TValue)!);
