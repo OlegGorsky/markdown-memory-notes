@@ -172,6 +172,28 @@ public sealed class SyncBroadcasterTests
         Assert.Equal(["first", "second"], sharedPeer.Messages);
     }
 
+    [Fact]
+    public async Task ForgetPeerRemovesIdleSendGateAfterBroadcastCompletes()
+    {
+        var registry = new SyncRoomRegistry<TestPeer>(maxRooms: 1, maxPeersPerRoom: 4);
+        var senderId = Guid.NewGuid();
+        var peerId = Guid.NewGuid();
+        registry.TryJoin(Room, senderId, new TestPeer());
+        registry.TryJoin(Room, peerId, new TestPeer());
+        var broadcaster = new SyncBroadcaster<TestPeer>(
+            registry,
+            static peer => peer.IsOpen,
+            SendAsync,
+            maxFanoutConcurrency: 4,
+            new SyncMetrics());
+        await broadcaster.BroadcastAsync(Room, senderId, "payload", TimeSpan.FromSeconds(1), NullLogger.Instance);
+        Assert.Equal(1, broadcaster.SendGateCount);
+
+        broadcaster.ForgetPeer(peerId);
+
+        Assert.Equal(0, broadcaster.SendGateCount);
+    }
+
     private static Task SendAsync(TestPeer peer, string payload, CancellationToken cancellationToken)
     {
         peer.Messages.Add(payload);

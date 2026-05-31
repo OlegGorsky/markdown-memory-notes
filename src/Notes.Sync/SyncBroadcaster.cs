@@ -36,6 +36,17 @@ public sealed class SyncBroadcaster<TConnection>
         this.metrics = metrics;
     }
 
+    public int SendGateCount
+    {
+        get
+        {
+            lock (sendGateLock)
+            {
+                return sendGates.Count;
+            }
+        }
+    }
+
     public async Task<SyncBroadcastResult> BroadcastAsync(
         string room,
         Guid senderId,
@@ -140,6 +151,7 @@ public sealed class SyncBroadcaster<TConnection>
             ReferenceEquals(current, sendGate))
         {
             sendGates.Remove(connectionId);
+            sendGate.Dispose();
         }
     }
 
@@ -187,7 +199,6 @@ public sealed class SyncBroadcaster<TConnection>
         private void Release()
         {
             semaphore.Release();
-            ReleaseReference();
         }
 
         public void ReleaseReference()

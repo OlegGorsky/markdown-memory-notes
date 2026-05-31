@@ -219,6 +219,7 @@ app.MapGet("/health", async (CancellationToken cancellationToken) =>
         rooms = stats.Rooms,
         connections = stats.Connections,
         activeWebSockets = connections.ActiveConnections,
+        activeSendGates = broadcaster.SendGateCount,
         counters,
         options.MaxConnections,
         options.MaxConnectionsPerClient,
@@ -244,7 +245,11 @@ app.MapGet("/health", async (CancellationToken cancellationToken) =>
 app.MapGet("/metrics", () =>
 {
     return Results.Text(
-        metrics.RenderPrometheus(rooms.Stats, connections.ActiveConnections, backplaneBridge.SubscriptionCount),
+        metrics.RenderPrometheus(
+            rooms.Stats,
+            connections.ActiveConnections,
+            backplaneBridge.SubscriptionCount,
+            broadcaster.SendGateCount),
         "text/plain; version=0.0.4");
 });
 
