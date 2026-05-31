@@ -43,7 +43,10 @@ export function connect(url, room, dotNetRef, onMessageMethod, onStatusMethod) {
 export function send(data) {
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(data);
+        return true;
     }
+
+    return false;
 }
 
 export function disconnect() {

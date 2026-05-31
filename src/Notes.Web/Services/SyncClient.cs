@@ -205,14 +205,16 @@ public sealed class SyncClient : IAsyncDisposable
 
         try
         {
-            await SendNowAsync(message);
+            if (!await TrySendNowAsync(message))
+            {
+                QueuePending(message);
+                MarkDisconnected();
+            }
         }
         catch (JSException)
         {
             QueuePending(message);
-            IsConnected = false;
-            Status = "disconnected";
-            StateChanged?.Invoke(this, EventArgs.Empty);
+            MarkDisconnected();
         }
     }
 
@@ -228,24 +230,37 @@ public sealed class SyncClient : IAsyncDisposable
 
             try
             {
-                await SendNowAsync(message);
+                if (await TrySendNowAsync(message))
+                {
+                    continue;
+                }
+
+                QueuePending(message);
+                MarkDisconnected();
+                return;
             }
             catch (JSException)
             {
                 QueuePending(message);
-                IsConnected = false;
-                Status = "disconnected";
-                StateChanged?.Invoke(this, EventArgs.Empty);
+                MarkDisconnected();
                 return;
             }
         }
     }
 
-    private async Task SendNowAsync(SyncMessage message)
+    private async Task<bool> TrySendNowAsync(SyncMessage message)
     {
         var json = JsonSerializer.Serialize(message, JsonOptions);
         var mod = await ModuleAsync();
-        await mod.InvokeVoidAsync("send", json);
+        return await mod.InvokeAsync<bool>("send", json);
+    }
+
+    private void MarkDisconnected()
+    {
+        IsConnected = false;
+        PeerCount = 0;
+        Status = "disconnected";
+        StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void QueuePending(SyncMessage message)

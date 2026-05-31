@@ -216,6 +216,30 @@ public sealed class SyncClientTests
     }
 
     [Fact]
+    public async Task SendFileAsyncRequeuesWhenJsSendReportsClosedSocket()
+    {
+        var js = new CapturingJsRuntime();
+        await using var client = new SyncClient(js);
+        await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "AbCdEfGhIjKlMnOpQrStUv", (_, _) => Task.CompletedTask);
+        await client.OnStatus("connected");
+        await client.OnMessage("""{"type":"presence","peerCount":2}""");
+        js.Module.SendReportsOpen = false;
+
+        await client.SendFileAsync("notes/project.md", "# Waiting");
+
+        Assert.False(client.IsConnected);
+        Assert.Equal(0, client.PeerCount);
+        Assert.Empty(js.Module.SentMessages);
+
+        js.Module.SendReportsOpen = true;
+        await client.OnStatus("connected");
+        await client.OnMessage("""{"type":"presence","peerCount":2}""");
+
+        var message = Assert.Single(js.Module.SentMessages);
+        Assert.Contains("\"content\":\"# Waiting\"", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task DisconnectAsyncClearsPeerPresence()
     {
         var js = new CapturingJsRuntime();
@@ -256,6 +280,7 @@ public sealed class SyncClientTests
     {
         public List<string> SentMessages { get; } = new();
         public int ConnectCalls { get; private set; }
+        public bool SendReportsOpen { get; set; } = true;
 
         public ValueTask DisposeAsync()
         {
@@ -266,8 +291,17 @@ public sealed class SyncClientTests
         {
             if (identifier == "send" && args is [string message])
             {
+                if (!SendReportsOpen)
+                {
+                    return typeof(TValue) == typeof(bool)
+                        ? new ValueTask<TValue>((TValue)(object)false)
+                        : new ValueTask<TValue>(default(TValue)!);
+                }
+
                 SentMessages.Add(message);
-                return new ValueTask<TValue>(default(TValue)!);
+                return typeof(TValue) == typeof(bool)
+                    ? new ValueTask<TValue>((TValue)(object)true)
+                    : new ValueTask<TValue>(default(TValue)!);
             }
 
             if (identifier is "connect" or "disconnect")
