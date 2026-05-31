@@ -10,9 +10,16 @@
     @if (Node.Expanded)
     {
         <div class="tree-children">
-            @foreach (var child in Node.Children)
+            @foreach (var child in Node.VisibleChildren)
             {
                 <TreeNodeItem Node="child" OnSelect="OnSelect" OnDuplicate="OnDuplicate" OnDelete="OnDelete" />
+            }
+            @if (Node.HasHiddenChildren)
+            {
+                <button class="tree-more" @onclick="Node.ShowMoreChildren">
+                    <LucideIcon Name="chevron-down" Class="tree-icon" />
+                    <span>Ещё @Node.HiddenChildrenCount</span>
+                </button>
             }
         </div>
     }

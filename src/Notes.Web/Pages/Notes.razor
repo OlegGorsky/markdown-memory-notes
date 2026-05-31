@@ -242,6 +242,8 @@ else
     private ElementReference _textareaRef;
     private IJSObjectReference? _editorModule;
     private const string SyncOversizedNotice = "Файл слишком большой для синхронизации.";
+    private const int InitialVisibleTreeChildren = 80;
+    private const int TreeChildrenRevealStep = 80;
 
     protected override async Task OnInitializedAsync()
     {
@@ -287,6 +289,7 @@ else
 
     private List<TreeNode> BuildTree(List<Note> notes)
     {
+        var priorTreeState = CaptureTreeState(_noteTree);
         var root = new List<TreeNode>();
         foreach (var note in notes.OrderBy(n => n.Title))
         {
@@ -298,14 +301,58 @@ else
                 var folder = current.FirstOrDefault(n => n.IsFolder && n.Name == parts[i]);
                 if (folder is null)
                 {
-                    folder = new TreeNode(parts[i], true);
+                    folder = new TreeNode(parts[i], true, expanded: i == 0);
                     current.Add(folder);
                 }
                 current = folder.Children;
             }
             current.Add(new TreeNode(parts[^1], false) { Note = note, NoteTitle = note.Title });
         }
+        RestoreTreeState(root, priorTreeState);
         return root;
+    }
+
+    private static Dictionary<string, TreeNodeViewState> CaptureTreeState(IEnumerable<TreeNode> nodes)
+    {
+        var state = new Dictionary<string, TreeNodeViewState>(StringComparer.Ordinal);
+        CaptureTreeState(nodes, parentPath: "", state);
+        return state;
+    }
+
+    private static void CaptureTreeState(
+        IEnumerable<TreeNode> nodes,
+        string parentPath,
+        Dictionary<string, TreeNodeViewState> state)
+    {
+        foreach (var node in nodes.Where(static node => node.IsFolder))
+        {
+            var nodePath = string.IsNullOrEmpty(parentPath) ? node.Name : $"{parentPath}/{node.Name}";
+            state[nodePath] = new TreeNodeViewState(node.Expanded, node.VisibleChildrenCount);
+            CaptureTreeState(node.Children, nodePath, state);
+        }
+    }
+
+    private static void RestoreTreeState(
+        IEnumerable<TreeNode> nodes,
+        IReadOnlyDictionary<string, TreeNodeViewState> state)
+    {
+        RestoreTreeState(nodes, parentPath: "", state);
+    }
+
+    private static void RestoreTreeState(
+        IEnumerable<TreeNode> nodes,
+        string parentPath,
+        IReadOnlyDictionary<string, TreeNodeViewState> state)
+    {
+        foreach (var node in nodes.Where(static node => node.IsFolder))
+        {
+            var nodePath = string.IsNullOrEmpty(parentPath) ? node.Name : $"{parentPath}/{node.Name}";
+            if (state.TryGetValue(nodePath, out var nodeState))
+            {
+                node.RestoreViewState(nodeState.Expanded, nodeState.VisibleChildrenCount);
+            }
+            RestoreTreeState(node.Children, nodePath, state);
+        }
     }
 
     private string RenderPreview()
@@ -749,11 +796,31 @@ else
         public Note? Note { get; set; }
         public string? NoteTitle { get; set; }
         public bool Expanded { get; set; } = true;
+        public int VisibleChildrenCount { get; private set; } = InitialVisibleTreeChildren;
+        public IEnumerable<TreeNode> VisibleChildren => Children.Take(VisibleChildrenCount);
+        public bool HasHiddenChildren => VisibleChildrenCount < Children.Count;
+        public int HiddenChildrenCount => Math.Max(0, Children.Count - VisibleChildrenCount);
 
-        public TreeNode(string name, bool isFolder)
+        public TreeNode(string name, bool isFolder, bool expanded = true)
         {
             Name = name;
             IsFolder = isFolder;
+            Expanded = expanded;
+        }
+
+        public void ShowMoreChildren()
+        {
+            VisibleChildrenCount = Math.Min(Children.Count, VisibleChildrenCount + TreeChildrenRevealStep);
+        }
+
+        public void RestoreViewState(bool expanded, int visibleChildrenCount)
+        {
+            Expanded = expanded;
+            VisibleChildrenCount = Math.Min(
+                Children.Count,
+                Math.Max(InitialVisibleTreeChildren, visibleChildrenCount));
         }
     }
+
+    private readonly record struct TreeNodeViewState(bool Expanded, int VisibleChildrenCount);
 }

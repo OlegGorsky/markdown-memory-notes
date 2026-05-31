@@ -319,6 +319,14 @@ p.lead { font-size: 1.05rem; color: var(--text-secondary); }
 .tree-folder:hover { background: var(--glass-bg-hover); }
 .tree-arrow { font-size: 0.55rem; width: 12px; flex-shrink: 0; }
 .tree-children { padding-left: 14px; }
+.tree-more {
+    display: flex; align-items: center; gap: 4px;
+    width: 100%; padding: 5px 8px;
+    border: 0; border-radius: 6px;
+    background: transparent; color: var(--text-muted);
+    cursor: pointer; font-size: 0.76rem; text-align: left;
+}
+.tree-more:hover { background: var(--glass-bg-hover); color: var(--text-secondary); }
 
 .tree-note {
     display: flex; align-items: center; gap: 4px;
