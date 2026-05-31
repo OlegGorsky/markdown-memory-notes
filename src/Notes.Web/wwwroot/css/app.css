@@ -150,19 +150,59 @@ p.lead { font-size: 1.05rem; color: var(--text-secondary); }
 
 .editor-textarea::placeholder { color: var(--text-muted); }
 
-/* ── Editor Toolbar ───────────────────────── */
-.editor-toolbar {
-    display: flex; gap: 2px; flex-wrap: wrap;
-    padding: 6px 16px;
-    background: var(--glass-bg);
-    border-bottom: 1px solid rgba(255,255,255,0.03);
+/* ── Editor Toolbar Dropdown ─────────────── */
+.editor-toolbar-dropdown { position: relative; }
+.toolbar-menu {
+    position: absolute; top: 100%; left: 0; z-index: 50;
+    background: var(--bg-elevated);
+    backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: var(--radius);
+    padding: 6px; min-width: 180px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
 }
-.editor-toolbar .glass-btn {
-    padding: 5px 10px;
-    font-size: 0.78rem;
-    min-width: 32px;
-    justify-content: center;
+.toolbar-menu-item {
+    display: flex; align-items: center; gap: 10px;
+    width: 100%; padding: 8px 12px;
+    background: transparent; border: none; border-radius: 8px;
+    color: var(--text-primary); font-size: 0.82rem;
+    cursor: pointer; transition: background 0.15s ease;
+    font-family: var(--font);
 }
+.toolbar-menu-item:hover { background: var(--glass-bg-hover); }
+.toolbar-menu-item .lucide-icon { width: 16px; height: 16px; color: var(--text-secondary); }
+
+/* ── Modal ──────────────────────────────── */
+.modal-overlay {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(4px);
+    display: flex; align-items: center; justify-content: center;
+}
+.modal-content {
+    width: 400px; max-width: 90vw;
+    border-radius: var(--radius-lg);
+    padding: 0; overflow: hidden;
+}
+.modal-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.modal-header h4 { margin: 0; font-size: 1rem; }
+.modal-body { padding: 20px; }
+.sync-code-display {
+    font-family: var(--font-mono); font-size: 1.5rem; font-weight: 600;
+    letter-spacing: 0.15em; text-align: center;
+    padding: 12px; background: var(--glass-bg);
+    border-radius: var(--radius-sm);
+    color: var(--accent);
+}
+.mode-label { font-size: 0.75rem; margin-left: 2px; }
+
+/* ── Input Group ────────────────────────── */
+.input-group { display: flex; gap: 8px; }
+.input-group .glass-input { flex: 1; }
 
 /* ── Markdown Preview ─────────────────────── */
 .md-preview {

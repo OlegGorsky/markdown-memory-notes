@@ -37,12 +37,14 @@ else
                                 @if (vault.SyncCode is null)
                                 {
                                     <button class="glass-btn glass-btn-sm" title="Синхронизировать"
-                                            @onclick="() => GenerateSyncCodeAsync(vault)" @onclick:stopPropagation="true"><LucideIcon Name="refresh-cw" /></button>
+                                            @onclick="() => _syncModalVault = vault.Id" @onclick:stopPropagation="true"><LucideIcon Name="refresh-cw" /></button>
                                 }
                                 else
                                 {
-                                    <span class="sync-badge @(Sync.IsConnected ? "connected" : "")"
-                                          title="Код: @vault.SyncCode"><LucideIcon Name="@(Sync.IsConnected ? "check" : "unplug")" /></span>
+                                    <button class="glass-btn glass-btn-sm" title="Код: @vault.SyncCode"
+                                            @onclick="() => _syncModalVault = vault.Id" @onclick:stopPropagation="true">
+                                        <LucideIcon Name="@(Sync.IsConnected ? "check" : "refresh-cw")" />
+                                    </button>
                                 }
                                 <button class="glass-btn glass-btn-sm" title="Удалить хранилище"
                                         @onclick="() => DeleteVaultAsync(vault)" @onclick:stopPropagation="true"><LucideIcon Name="x" /></button>
@@ -62,14 +64,6 @@ else
                 }
                 <button class="glass-btn glass-btn-sm mt-2" @onclick="AddVaultAsync"
                         style="width:100%;justify-content:center"><LucideIcon Name="plus" /> Добавить папку</button>
-                @if (_syncInputVault is not null)
-                {
-                    <div class="sync-input-row mt-2">
-                        <input @bind="_syncCodeInput" class="glass-input" placeholder="Код синхронизации" />
-                        <button class="glass-btn glass-btn-accent glass-btn-sm"
-                                @onclick="ConnectSyncAsync">Подкл.</button>
-                    </div>
-                }
             </div>
 
             <div class="editor">
@@ -78,8 +72,27 @@ else
                     <div class="editor-header">
                         <input @bind="_editTitle" @bind:event="oninput" @bind:after="OnFieldChanged"
                                class="glass-input" placeholder="Заголовок" />
+                        <div class="editor-toolbar-dropdown" @onfocusout="() => _toolbarOpen = false">
+                            <button class="glass-btn glass-btn-sm" @onclick="() => _toolbarOpen = !_toolbarOpen"
+                                    @onclick:stopPropagation="true">
+                                <LucideIcon Name="plus" />
+                            </button>
+                            @if (_toolbarOpen)
+                            {
+                                <div class="toolbar-menu animate-in" @onclick:stopPropagation="true">
+                                    @foreach (var item in MdFormatItems.All)
+                                    {
+                                        <button class="toolbar-menu-item" @onclick="() => SelectMdFormat(item.Format)">
+                                            <LucideIcon Name="@item.Icon" />
+                                            <span>@item.Label</span>
+                                        </button>
+                                    }
+                                </div>
+                            }
+                        </div>
                         <button class="glass-btn glass-btn-sm" @onclick="() => _previewMode = !_previewMode">
                             <LucideIcon Name="@(_previewMode ? "pencil" : "eye")" />
+                            <span class="mode-label">@(_previewMode ? "С разметкой" : "Без разметки")</span>
                         </button>
                     </div>
                     @if (_previewMode)
@@ -90,19 +103,6 @@ else
                     }
                     else
                     {
-                        <div class="editor-toolbar">
-                            <button class="glass-btn glass-btn-sm" title="Жирный" @onclick="() => InsertMdFormat(MdFormat.Bold)"><LucideIcon Name="bold" /></button>
-                            <button class="glass-btn glass-btn-sm" title="Курсив" @onclick="() => InsertMdFormat(MdFormat.Italic)"><LucideIcon Name="italic" /></button>
-                            <button class="glass-btn glass-btn-sm" title="Заголовок" @onclick="() => InsertMdFormat(MdFormat.Heading)"><LucideIcon Name="heading" /></button>
-                            <button class="glass-btn glass-btn-sm" title="Список" @onclick="() => InsertMdFormat(MdFormat.List)"><LucideIcon Name="list" /></button>
-                            <button class="glass-btn glass-btn-sm" title="Код" @onclick="() => InsertMdFormat(MdFormat.Code)"><LucideIcon Name="code" /></button>
-                            <button class="glass-btn glass-btn-sm" title="Ссылка" @onclick="() => InsertMdFormat(MdFormat.Link)"><LucideIcon Name="link" /></button>
-                            <button class="glass-btn glass-btn-sm" title="Цитата" @onclick="() => InsertMdFormat(MdFormat.Quote)"><LucideIcon Name="quote" /></button>
-                            <button class="glass-btn glass-btn-sm" title="Таблица" @onclick="() => InsertMdFormat(MdFormat.Table)"><LucideIcon Name="table" /></button>
-                            <button class="glass-btn glass-btn-sm" title="Картинка" @onclick="() => InsertMdFormat(MdFormat.Image)"><LucideIcon Name="image" /></button>
-                            <button class="glass-btn glass-btn-sm" title="Разделитель" @onclick="() => InsertMdFormat(MdFormat.Divider)"><LucideIcon Name="minus" /></button>
-                            <button class="glass-btn glass-btn-sm" title="Чеклист" @onclick="() => InsertMdFormat(MdFormat.Checklist)"><LucideIcon Name="list-checks" /></button>
-                        </div>
                         <textarea @ref="_textareaRef" @bind="_editBody" @bind:event="oninput" @bind:after="OnFieldChanged"
                                   class="editor-textarea" rows="20"></textarea>
                     }
@@ -122,6 +122,51 @@ else
             </div>
         </div>
     </div>
+
+    @if (_syncModalVault is not null)
+    {
+        var vault = _vaults.FirstOrDefault(v => v.Id == _syncModalVault);
+        <div class="modal-overlay" @onclick="() => _syncModalVault = null">
+            <div class="modal-content glass animate-in" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h4>Синхронизация</h4>
+                    <button class="glass-btn glass-btn-sm" @onclick="() => _syncModalVault = null"><LucideIcon Name="x" /></button>
+                </div>
+                <div class="modal-body">
+                    @if (vault?.SyncCode is not null)
+                    {
+                        <p class="text-muted">Код этой папки:</p>
+                        <div class="sync-code-display">@vault.SyncCode</div>
+                        <p class="text-muted mt-2">Введите этот код на другом устройстве, чтобы подключиться.</p>
+                        @if (Sync.IsConnected)
+                        {
+                            <span class="sync-badge connected">Подключено</span>
+                        }
+                        else
+                        {
+                            <button class="glass-btn glass-btn-accent glass-btn-sm mt-2"
+                                    @onclick="() => ReconnectSyncAsync(vault)">Переподключиться</button>
+                        }
+                    }
+                    else
+                    {
+                        <p class="text-muted">Сгенерировать код для синхронизации:</p>
+                        <button class="glass-btn glass-btn-accent" @onclick="() => GenerateSyncCodeForModalAsync()">
+                            Сгенерировать код
+                        </button>
+                        <div class="mt-3">
+                            <p class="text-muted">Или введите код с другого устройства:</p>
+                            <div class="input-group">
+                                <input @bind="_syncCodeInput" class="glass-input" placeholder="Код синхронизации" />
+                                <button class="glass-btn glass-btn-accent"
+                                        @onclick="ConnectSyncAsync">Подключить</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
 }
 
 @code {
@@ -132,9 +177,10 @@ else
     private string _editTitle = "";
     private string _editBody = "";
     private bool _previewMode;
+    private bool _toolbarOpen;
+    private string? _syncModalVault;
     private string? _activeVaultId;
     private string? _hoverVault;
-    private VaultEntry? _syncInputVault;
     private string _syncCodeInput = "";
     private CancellationTokenSource? _autosaveCts;
     private List<string> _quietMemory = new();
@@ -259,27 +305,45 @@ else
         StateHasChanged();
     }
 
-    private async Task GenerateSyncCodeAsync(VaultEntry vault)
+    private async Task GenerateSyncCodeForModalAsync()
     {
+        var vault = _vaults.FirstOrDefault(v => v.Id == _syncModalVault);
+        if (vault is null) return;
         var code = Guid.NewGuid().ToString("N")[..8].ToUpper();
         var updated = vault with { SyncCode = code };
         var idx = _vaults.FindIndex(v => v.Id == vault.Id);
         _vaults[idx] = updated;
         await VaultMgr.SaveAsync(updated);
-        _syncInputVault = vault;
         StateHasChanged();
+    }
+
+    private async Task ReconnectSyncAsync(VaultEntry vault)
+    {
+        if (vault.SyncCode is null) return;
+        try
+        {
+            await Sync.ConnectAsync(new Uri("ws://localhost:5199/sync"), vault.SyncCode,
+                async (path, content) =>
+                {
+                    await FS.WriteAllTextAsync(path, content);
+                    await InvokeAsync(ReloadNotesAsync);
+                });
+        }
+        catch { }
     }
 
     private async Task ConnectSyncAsync()
     {
-        if (_syncInputVault is null || string.IsNullOrWhiteSpace(_syncCodeInput)) return;
+        if (string.IsNullOrWhiteSpace(_syncCodeInput)) return;
         var code = _syncCodeInput.Trim().ToUpper();
-        _syncInputVault = _syncInputVault with { SyncCode = code };
-        var idx = _vaults.FindIndex(v => v.Id == _syncInputVault.Id);
-        _vaults[idx] = _syncInputVault;
-        await VaultMgr.SaveAsync(_syncInputVault);
+        var vault = _vaults.FirstOrDefault(v => v.Id == _syncModalVault);
+        if (vault is null) return;
+        var updated = vault with { SyncCode = code };
+        var idx = _vaults.FindIndex(v => v.Id == vault.Id);
+        _vaults[idx] = updated;
+        await VaultMgr.SaveAsync(updated);
         _syncCodeInput = "";
-        _syncInputVault = null;
+        _syncModalVault = null;
 
         try
         {
@@ -377,7 +441,32 @@ else
             .ToList();
     }
 
+    private async Task SelectMdFormat(MdFormat fmt)
+    {
+        _toolbarOpen = false;
+        await InsertMdFormat(fmt);
+    }
+
     private enum MdFormat { Bold, Italic, Heading, List, Code, Link, Quote, Table, Image, Divider, Checklist }
+
+    private sealed record MdFormatItem(MdFormat Format, string Icon, string Label);
+
+    private static class MdFormatItems
+    {
+        public static readonly MdFormatItem[] All = [
+            new(MdFormat.Bold, "bold", "Жирный"),
+            new(MdFormat.Italic, "italic", "Курсив"),
+            new(MdFormat.Heading, "heading", "Заголовок"),
+            new(MdFormat.List, "list", "Список"),
+            new(MdFormat.Code, "code", "Код"),
+            new(MdFormat.Link, "link", "Ссылка"),
+            new(MdFormat.Quote, "quote", "Цитата"),
+            new(MdFormat.Table, "table", "Таблица"),
+            new(MdFormat.Image, "image", "Картинка"),
+            new(MdFormat.Divider, "minus", "Разделитель"),
+            new(MdFormat.Checklist, "list-checks", "Чеклист"),
+        ];
+    }
 
     private async Task InsertMdFormat(MdFormat fmt)
     {
