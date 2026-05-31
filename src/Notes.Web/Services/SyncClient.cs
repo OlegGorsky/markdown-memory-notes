@@ -21,6 +21,7 @@ public sealed class SyncClient : IAsyncDisposable
     private Func<string, string?, string?, Task>? _onFileReceived;
 
     public bool IsConnected { get; private set; }
+    public int PeerCount { get; private set; }
     public string? Status { get; private set; }
     public string? Room => _room;
     public event EventHandler? StateChanged;
@@ -66,6 +67,10 @@ public sealed class SyncClient : IAsyncDisposable
 
         _room = room;
         _onFileReceived = onFileReceived;
+        IsConnected = false;
+        PeerCount = 0;
+        Status = null;
+        StateChanged?.Invoke(this, EventArgs.Empty);
         _selfRef = DotNetObjectReference.Create(this);
         var mod = await ModuleAsync();
         await mod.InvokeVoidAsync("connect", serverUrl.ToString(), room,
@@ -109,12 +114,26 @@ public sealed class SyncClient : IAsyncDisposable
         var mod = await ModuleAsync();
         await mod.InvokeVoidAsync("disconnect");
         IsConnected = false;
+        PeerCount = 0;
         Status = null;
+        StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
     [JSInvokable]
-    public void OnMessage(string data)
+    public async Task OnMessage(string data)
     {
+        if (SyncPresenceMessage.TryParse(data, out var peerCount))
+        {
+            PeerCount = peerCount;
+            StateChanged?.Invoke(this, EventArgs.Empty);
+            if (CanSendNow)
+            {
+                await FlushPendingAsync();
+            }
+
+            return;
+        }
+
         try
         {
             var msg = JsonSerializer.Deserialize<SyncMessage>(data, JsonOptions);
@@ -144,9 +163,10 @@ public sealed class SyncClient : IAsyncDisposable
     public async Task OnStatus(string status)
     {
         IsConnected = status == "connected";
+        PeerCount = IsConnected ? Math.Max(PeerCount, 1) : 0;
         Status = status;
         StateChanged?.Invoke(this, EventArgs.Empty);
-        if (IsConnected)
+        if (CanSendNow)
         {
             await FlushPendingAsync();
         }
@@ -165,6 +185,8 @@ public sealed class SyncClient : IAsyncDisposable
         }
     }
 
+    private bool CanSendNow => IsConnected && PeerCount > 1;
+
     private static void ValidateBaseHash(string? baseHash)
     {
         if (baseHash is not null && !SyncContentHash.IsValid(baseHash))
@@ -175,7 +197,7 @@ public sealed class SyncClient : IAsyncDisposable
 
     private async Task SendOrQueueAsync(SyncMessage message)
     {
-        if (!IsConnected)
+        if (!CanSendNow)
         {
             QueuePending(message);
             return;
@@ -196,7 +218,7 @@ public sealed class SyncClient : IAsyncDisposable
 
     private async Task FlushPendingAsync()
     {
-        while (IsConnected)
+        while (CanSendNow)
         {
             var message = DequeuePending();
             if (message is null)

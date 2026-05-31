@@ -12,6 +12,7 @@ public sealed class SyncClientTests
         var js = new CapturingJsRuntime();
         await using var client = new SyncClient(js);
         await client.OnStatus("connected");
+        await client.OnMessage("""{"type":"presence","peerCount":2}""");
 
         var baseHash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
         await client.SendFileAsync("""notes\project.md""", "# Project", baseHash);
@@ -35,7 +36,7 @@ public sealed class SyncClientTests
             return Task.CompletedTask;
         });
 
-        client.OnMessage("""{"type":"file","path":"notes/project.md","content":"# Project","baseHash":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}""");
+        await client.OnMessage("""{"type":"file","path":"notes/project.md","content":"# Project","baseHash":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}""");
 
         var item = Assert.Single(received);
         Assert.Equal("notes/project.md", item.Path);
@@ -62,6 +63,7 @@ public sealed class SyncClientTests
         var js = new CapturingJsRuntime();
         await using var client = new SyncClient(js);
         await client.OnStatus("connected");
+        await client.OnMessage("""{"type":"presence","peerCount":2}""");
 
         var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
             client.SendFileAsync("notes/project.md", "# Project", "bad hash"));
@@ -81,13 +83,13 @@ public sealed class SyncClientTests
             return Task.CompletedTask;
         });
 
-        client.OnMessage("""{"type":"file","path":"notes/project.md","content":"# Project","baseHash":"bad hash"}""");
+        await client.OnMessage("""{"type":"file","path":"notes/project.md","content":"# Project","baseHash":"bad hash"}""");
 
         Assert.Empty(received);
     }
 
     [Fact]
-    public async Task SendFileAsyncQueuesLatestDisconnectedChangeAndFlushesWhenConnected()
+    public async Task SendFileAsyncQueuesLatestChangeAndFlushesWhenPeerAppears()
     {
         var js = new CapturingJsRuntime();
         await using var client = new SyncClient(js);
@@ -99,6 +101,10 @@ public sealed class SyncClientTests
         Assert.Empty(js.Module.SentMessages);
 
         await client.OnStatus("connected");
+
+        Assert.Empty(js.Module.SentMessages);
+
+        await client.OnMessage("""{"type":"presence","peerCount":2}""");
 
         var message = Assert.Single(js.Module.SentMessages);
         Assert.Contains("\"type\":\"file\"", message, StringComparison.Ordinal);
@@ -117,6 +123,7 @@ public sealed class SyncClientTests
         await client.SendFileAsync("notes/project.md", "# Draft");
         await client.SendDeleteAsync("notes/project.md");
         await client.OnStatus("connected");
+        await client.OnMessage("""{"type":"presence","peerCount":2}""");
 
         var message = Assert.Single(js.Module.SentMessages);
         Assert.Contains("\"type\":\"delete\"", message, StringComparison.Ordinal);
@@ -135,11 +142,91 @@ public sealed class SyncClientTests
         await client.SendFileAsync("notes/b.md", "# B");
         await client.SendFileAsync("notes/c.md", "# C");
         await client.OnStatus("connected");
+        await client.OnMessage("""{"type":"presence","peerCount":2}""");
 
         Assert.Equal(2, js.Module.SentMessages.Count);
         Assert.DoesNotContain(js.Module.SentMessages, message => message.Contains("\"path\":\"notes/a.md\"", StringComparison.Ordinal));
         Assert.Contains(js.Module.SentMessages, message => message.Contains("\"path\":\"notes/b.md\"", StringComparison.Ordinal));
         Assert.Contains(js.Module.SentMessages, message => message.Contains("\"path\":\"notes/c.md\"", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task SendFileAsyncQueuesWhileConnectedAlone()
+    {
+        var js = new CapturingJsRuntime();
+        await using var client = new SyncClient(js);
+        await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "AbCdEfGhIjKlMnOpQrStUv", (_, _) => Task.CompletedTask);
+        await client.OnStatus("connected");
+        await client.OnMessage("""{"type":"presence","peerCount":1}""");
+
+        await client.SendFileAsync("notes/project.md", "# Alone");
+
+        Assert.True(client.IsConnected);
+        Assert.Equal(1, client.PeerCount);
+        Assert.Empty(js.Module.SentMessages);
+
+        await client.OnMessage("""{"type":"presence","peerCount":2}""");
+
+        var message = Assert.Single(js.Module.SentMessages);
+        Assert.Contains("\"content\":\"# Alone\"", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ConnectAsyncResetsPeerPresenceBeforeReconnecting()
+    {
+        var js = new CapturingJsRuntime();
+        await using var client = new SyncClient(js);
+        await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "AbCdEfGhIjKlMnOpQrStUv", (_, _) => Task.CompletedTask);
+        await client.OnStatus("connected");
+        await client.OnMessage("""{"type":"presence","peerCount":2}""");
+
+        await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "ZyXwVuTsRqPoNmLkJiHgFe", (_, _) => Task.CompletedTask);
+        await client.SendFileAsync("notes/project.md", "# Waiting");
+
+        Assert.False(client.IsConnected);
+        Assert.Equal(0, client.PeerCount);
+        Assert.Empty(js.Module.SentMessages);
+
+        await client.OnStatus("connected");
+
+        Assert.Empty(js.Module.SentMessages);
+
+        await client.OnMessage("""{"type":"presence","peerCount":2}""");
+
+        var message = Assert.Single(js.Module.SentMessages);
+        Assert.Contains("\"content\":\"# Waiting\"", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PresenceBeforeConnectedStatusStillFlushesQueuedChanges()
+    {
+        var js = new CapturingJsRuntime();
+        await using var client = new SyncClient(js);
+        await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "AbCdEfGhIjKlMnOpQrStUv", (_, _) => Task.CompletedTask);
+
+        await client.SendFileAsync("notes/project.md", "# Waiting");
+        await client.OnMessage("""{"type":"presence","peerCount":2}""");
+
+        Assert.Empty(js.Module.SentMessages);
+
+        await client.OnStatus("connected");
+
+        var message = Assert.Single(js.Module.SentMessages);
+        Assert.Contains("\"content\":\"# Waiting\"", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DisconnectAsyncClearsPeerPresence()
+    {
+        var js = new CapturingJsRuntime();
+        await using var client = new SyncClient(js);
+        await client.OnStatus("connected");
+        await client.OnMessage("""{"type":"presence","peerCount":2}""");
+
+        await client.DisconnectAsync();
+
+        Assert.False(client.IsConnected);
+        Assert.Equal(0, client.PeerCount);
     }
 
     private sealed class CapturingJsRuntime : IJSRuntime

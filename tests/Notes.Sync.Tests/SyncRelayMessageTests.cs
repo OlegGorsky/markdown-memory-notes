@@ -28,6 +28,7 @@ public sealed class SyncRelayMessageTests
     [InlineData("""{"type":"file","path":".notes/trails.json","content":"{}"}""")]
     [InlineData("""{"type":"delete","path":"notes/a.txt","content":null}""")]
     [InlineData("""{"type":"rename","path":"notes/a.md","content":null}""")]
+    [InlineData("""{"type":"presence","peerCount":2}""")]
     [InlineData("""{"type":"file","path":"notes/a.md","content":null}""")]
     [InlineData("""{"type":"file","path":"notes/a.md","content":"# A","baseHash":"bad hash"}""")]
     [InlineData("""{"type":"delete","path":"notes/a.md","baseHash":"bad hash"}""")]

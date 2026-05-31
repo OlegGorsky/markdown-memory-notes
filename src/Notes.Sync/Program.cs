@@ -57,6 +57,8 @@ app.Map("/sync", async (HttpContext context) =>
         {
             SyncLog.PeerConnected(app.Logger, room, rooms.Stats.Connections);
         }
+
+        await SyncPresenceBroadcaster.BroadcastAsync(room, rooms, broadcaster, options.SendTimeout, app.Logger);
         var rateLimit = new SyncRateLimit(options.MaxMessagesPerMinute, TimeSpan.FromMinutes(1));
 
         while (ws.State == WebSocketState.Open && !context.RequestAborted.IsCancellationRequested)
@@ -108,6 +110,7 @@ app.Map("/sync", async (HttpContext context) =>
         if (room is not null)
         {
             rooms.Leave(room, connectionId);
+            await SyncPresenceBroadcaster.BroadcastAsync(room, rooms, broadcaster, options.SendTimeout, app.Logger);
             if (app.Logger.IsEnabled(LogLevel.Information))
             {
                 SyncLog.PeerDisconnected(app.Logger, room, rooms.Stats.Connections);
