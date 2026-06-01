@@ -44,6 +44,18 @@ public sealed class BrowserFileSystem : IFileSystem, IAsyncDisposable
         return handle;
     }
 
+    public async Task<BrowserVaultHandle?> CreateVirtualVaultAsync(string? vaultId = null)
+    {
+        var mod = await module.Value;
+        var handle = await mod.InvokeAsync<BrowserVaultHandle?>("createVirtualVault", vaultId);
+        if (handle is not null)
+        {
+            SetCurrentVault(handle);
+            IsAvailable = true;
+        }
+        return handle;
+    }
+
     public async Task<BrowserVaultHandle?> SwitchVaultAsync(string vaultId)
     {
         var mod = await module.Value;

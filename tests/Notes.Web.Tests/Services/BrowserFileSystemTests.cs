@@ -34,6 +34,20 @@ public sealed class BrowserFileSystemTests
         Assert.Equal("# Local", write.Contents);
     }
 
+    [Fact]
+    public async Task CreateVirtualVaultAsyncUsesVirtualVaultInterop()
+    {
+        var js = new CapturingFileSystemJsRuntime();
+        await using var fileSystem = new BrowserFileSystem(js);
+
+        var vault = await fileSystem.CreateVirtualVaultAsync("paired_a");
+
+        Assert.Equal("paired_a", vault!.Id);
+        Assert.Equal("/browser-vaults/paired_a", vault.Path);
+        Assert.Equal(0, js.Module.OpenVaultCalls);
+        Assert.Equal(1, js.Module.CreateVirtualVaultCalls);
+    }
+
     private sealed class CapturingFileSystemJsRuntime : IJSRuntime
     {
         public CapturingFileSystemJsObjectReference Module { get; } = new();
@@ -60,6 +74,8 @@ public sealed class BrowserFileSystemTests
     private sealed class CapturingFileSystemJsObjectReference : IJSObjectReference
     {
         public List<(string Path, string Contents)> Writes { get; } = new();
+        public int OpenVaultCalls { get; private set; }
+        public int CreateVirtualVaultCalls { get; private set; }
 
         public ValueTask DisposeAsync()
         {
@@ -70,7 +86,8 @@ public sealed class BrowserFileSystemTests
         {
             return identifier switch
             {
-                "openVault" => Result<TValue>(new BrowserVaultHandle("vault_a", "Vault A", "/browser-vaults/vault_a")),
+                "openVault" => OpenVault<TValue>(),
+                "createVirtualVault" => CreateVirtualVault<TValue>(args),
                 "writeAllText" => WriteAllText<TValue>(args),
                 _ => throw new NotSupportedException(identifier)
             };
@@ -82,6 +99,19 @@ public sealed class BrowserFileSystemTests
             object?[]? args)
         {
             return InvokeAsync<TValue>(identifier, args);
+        }
+
+        private ValueTask<TValue> OpenVault<TValue>()
+        {
+            OpenVaultCalls++;
+            return Result<TValue>(new BrowserVaultHandle("vault_a", "Vault A", "/browser-vaults/vault_a"));
+        }
+
+        private ValueTask<TValue> CreateVirtualVault<TValue>(object?[]? args)
+        {
+            CreateVirtualVaultCalls++;
+            var id = (string)(args?[0] ?? "virtual_a");
+            return Result<TValue>(new BrowserVaultHandle(id, "Vault", $"/browser-vaults/{id}"));
         }
 
         private ValueTask<TValue> WriteAllText<TValue>(object?[]? args)

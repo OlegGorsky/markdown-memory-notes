@@ -110,6 +110,34 @@ public sealed class NotesSyncFeedbackTests
     }
 
     [Fact]
+    public async Task ConnectNewVaultAsyncCreatesVirtualVaultWithoutOpeningPicker()
+    {
+        const string syncCode = "AbCdEfGhIjKlMnOpQrStUv";
+        var js = new CapturingSyncSetupJsRuntime();
+        await using var fileSystem = new BrowserFileSystem(js);
+        var session = new WebVaultSession(fileSystem);
+        await using var vaultManager = new VaultManager(js);
+        await using var sync = new SyncClient(js);
+        using var page = new NotesPage();
+        SetProperty(page, "FS", fileSystem);
+        SetProperty(page, "Session", session);
+        SetProperty(page, "VaultMgr", vaultManager);
+        SetProperty(page, "Sync", sync);
+        SetField(page, "_syncCodeInput", syncCode);
+
+        await InvokeConnectNewVaultAsync(page, ignoreUnrenderedStateChange: true);
+
+        Assert.Equal(0, js.Module.OpenVaultCalls);
+        Assert.Equal(1, js.Module.CreateVirtualVaultCalls);
+        var saved = Assert.Single(js.Module.SavedVaults);
+        Assert.Equal("paired_vault", saved.Id);
+        Assert.Equal(syncCode, saved.SyncCode);
+        Assert.Equal(syncCode, Assert.Single(js.Module.ConnectRooms));
+        Assert.Equal(syncCode, sync.Room);
+        Assert.True(session.IsOpen);
+    }
+
+    [Fact]
     public async Task RemoveLoadedNoteClearsStaleQuietMemory()
     {
         using var page = new NotesPage();
@@ -224,6 +252,26 @@ public sealed class NotesSyncFeedbackTests
         await task;
     }
 
+    private static async Task InvokeConnectNewVaultAsync(
+        NotesPage page,
+        bool ignoreUnrenderedStateChange = false)
+    {
+        var method = typeof(NotesPage).GetMethod("ConnectNewVaultAsync", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("ConnectNewVaultAsync method was not found.");
+
+        var task = (Task)(method.Invoke(page, [])
+            ?? throw new InvalidOperationException("ConnectNewVaultAsync returned null."));
+        try
+        {
+            await task;
+        }
+        catch (InvalidOperationException exception) when (
+            ignoreUnrenderedStateChange &&
+            exception.Message.Contains("render handle", StringComparison.OrdinalIgnoreCase))
+        {
+        }
+    }
+
     private static void SetSession(NotesPage page, WebVaultSession session)
     {
         var property = typeof(NotesPage).GetProperty("Session", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
@@ -295,9 +343,12 @@ public sealed class NotesSyncFeedbackTests
 
     private sealed class CapturingSyncSetupJsObjectReference : IJSObjectReference
     {
+        private readonly Dictionary<string, string> files = new(StringComparer.Ordinal);
         public List<VaultEntry> SavedVaults { get; } = new();
         public List<string> ConnectRooms { get; } = new();
         public int DisconnectCalls { get; private set; }
+        public int OpenVaultCalls { get; private set; }
+        public int CreateVirtualVaultCalls { get; private set; }
 
         public ValueTask DisposeAsync()
         {
@@ -309,6 +360,15 @@ public sealed class NotesSyncFeedbackTests
             return identifier switch
             {
                 "saveVault" => SaveVault<TValue>(args),
+                "listVaults" => Result<TValue>(SavedVaults.ToArray()),
+                "openVault" => OpenVault<TValue>(),
+                "createVirtualVault" => CreateVirtualVault<TValue>(),
+                "directoryExists" => Result<TValue>(DirectoryExists(args)),
+                "fileExists" => Result<TValue>(files.ContainsKey(PathArg(args))),
+                "createDirectory" => Result<TValue>(default!),
+                "writeAllText" => WriteAllText<TValue>(args),
+                "readAllText" => Result<TValue>(files[PathArg(args)]),
+                "enumerateFiles" => Result<TValue>(Array.Empty<string>()),
                 "getDefaultSyncUrl" => Result<TValue>("ws://localhost:5199/sync"),
                 "connect" => Connect<TValue>(args),
                 "disconnect" => Disconnect<TValue>(),
@@ -331,6 +391,35 @@ public sealed class NotesSyncFeedbackTests
             return Result<TValue>(default!);
         }
 
+        private ValueTask<TValue> OpenVault<TValue>()
+        {
+            OpenVaultCalls++;
+            return Result<TValue>(new BrowserVaultHandle("opened_vault", "Opened", "/browser-vaults/opened_vault"));
+        }
+
+        private ValueTask<TValue> CreateVirtualVault<TValue>()
+        {
+            CreateVirtualVaultCalls++;
+            return Result<TValue>(new BrowserVaultHandle("paired_vault", "Хранилище", "/browser-vaults/paired_vault"));
+        }
+
+        private bool DirectoryExists(object?[]? args)
+        {
+            var path = PathArg(args);
+            return string.IsNullOrEmpty(path) ||
+                   path is "notes" or "inbox" or ".notes" ||
+                   path.StartsWith("notes/", StringComparison.Ordinal) ||
+                   path.StartsWith("inbox/", StringComparison.Ordinal) ||
+                   path.StartsWith(".notes/", StringComparison.Ordinal);
+        }
+
+        private ValueTask<TValue> WriteAllText<TValue>(object?[]? args)
+        {
+            files[PathArg(args)] = (string)(args?[1]
+                ?? throw new ArgumentException("Missing contents.", nameof(args)));
+            return Result<TValue>(default!);
+        }
+
         private ValueTask<TValue> Connect<TValue>(object?[]? args)
         {
             ConnectRooms.Add((string)(args?[1]
@@ -342,6 +431,12 @@ public sealed class NotesSyncFeedbackTests
         {
             DisconnectCalls++;
             return Result<TValue>(default!);
+        }
+
+        private static string PathArg(object?[]? args)
+        {
+            return (string)(args?[0]
+                ?? throw new ArgumentException("Missing path.", nameof(args)));
         }
 
         private static ValueTask<TValue> Result<TValue>(object? value)

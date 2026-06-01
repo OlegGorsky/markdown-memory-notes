@@ -74,6 +74,10 @@ export async function openVault(id = null) {
     }
 }
 
+export async function createVirtualVault(id = null) {
+    return await openVirtualVault(id);
+}
+
 export async function switchVault(id) {
     return await tryRestoreVault(id);
 }

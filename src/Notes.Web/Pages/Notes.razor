@@ -466,16 +466,15 @@ else
 
         try
         {
-            var handle = await FS.OpenVaultAsync();
+            var handle = await FS.CreateVirtualVaultAsync();
             if (handle is null) return;
             await Session.OpenOrCreateAsync(handle.Path);
             var vault = new VaultEntry(handle.Id, handle.Name, Session.CurrentVault!.RootPath, code);
             await VaultMgr.SaveAsync(vault);
             _vaults = await VaultMgr.ListAsync();
             _activeVaultId = vault.Id;
+            await ConnectVaultSyncIfActiveAsync(vault);
             await ReloadNotesAsync();
-
-            await ConnectSyncRoomAsync(code);
         }
         catch
         {

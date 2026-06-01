@@ -78,6 +78,28 @@ async function testNativePickerIsUsedWhenAvailable() {
   });
 }
 
+async function testCreateVirtualVaultBypassesNativePicker() {
+  installBrowserHarness();
+  let pickerCalled = false;
+  globalThis.window.showDirectoryPicker = async () => {
+    pickerCalled = true;
+    return { name: 'Native notes' };
+  };
+  const fs = await loadFileSystemAccess();
+
+  const vault = await fs.createVirtualVault('paired_a');
+
+  assert.equal(pickerCalled, false);
+  assert.deepEqual(vault, {
+    Id: 'paired_a',
+    Name: 'Хранилище',
+    Path: '/browser-vaults/paired_a'
+  });
+
+  await fs.writeAllText('notes/synced.md', 'from pc');
+  assert.equal(await fs.readAllText('notes/synced.md'), 'from pc');
+}
+
 async function testAbortFromNativePickerReturnsNull() {
   installBrowserHarness();
   globalThis.window.showDirectoryPicker = async () => {
@@ -206,6 +228,7 @@ const tests = [
   testVirtualVaultOpensWithoutDirectoryPicker,
   testVirtualVaultRestoresFromIndexedDb,
   testNativePickerIsUsedWhenAvailable,
+  testCreateVirtualVaultBypassesNativePicker,
   testAbortFromNativePickerReturnsNull
 ];
 
