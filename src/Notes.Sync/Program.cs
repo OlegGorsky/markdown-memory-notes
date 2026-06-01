@@ -186,9 +186,10 @@ async Task HandleSyncRequestAsync(HttpContext context)
             }
 
             metrics.MessageReceived();
-            var result = await broadcaster.BroadcastAsync(room, connectionId, message, options.SendTimeout, app.Logger);
-            var backplaneResult = await backplaneBridge.PublishAsync(room, connectionId, message, context.RequestAborted);
-            if ((result.Succeeded > 0 || backplaneResult.RemoteSubscribers > 0) &&
+            var delivery = await SyncRelayFanout.DeliverAsync(
+                () => broadcaster.BroadcastAsync(room, connectionId, message, options.SendTimeout, app.Logger),
+                () => backplaneBridge.PublishAsync(room, connectionId, message, context.RequestAborted));
+            if ((delivery.Broadcast.Succeeded > 0 || delivery.Backplane.RemoteSubscribers > 0) &&
                 classification.MessageId is not null)
             {
                 var ackSent = await broadcaster.SendToPeerAsync(
@@ -204,7 +205,7 @@ async Task HandleSyncRequestAsync(HttpContext context)
                 }
             }
 
-            if (result.Failed > 0 || result.Attempted == 0)
+            if (delivery.Broadcast.Failed > 0 || delivery.Broadcast.Attempted == 0)
             {
                 await presenceCoordinator.BroadcastAsync(room, context.RequestAborted);
             }
