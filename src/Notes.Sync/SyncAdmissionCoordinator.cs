@@ -10,6 +10,7 @@ public sealed class SyncAdmissionCoordinator<TConnection>
     private readonly ISyncAdmissionController admissionController;
     private readonly int maxRooms;
     private readonly int maxPeersPerRoom;
+    private readonly TimeSpan operationTimeout;
     private readonly SyncMetrics metrics;
     private readonly ILogger logger;
     private readonly ConcurrentDictionary<Guid, string> distributedAdmissions = new();
@@ -19,6 +20,7 @@ public sealed class SyncAdmissionCoordinator<TConnection>
         ISyncAdmissionController admissionController,
         int maxRooms,
         int maxPeersPerRoom,
+        TimeSpan operationTimeout,
         SyncMetrics metrics,
         ILogger logger)
     {
@@ -26,6 +28,7 @@ public sealed class SyncAdmissionCoordinator<TConnection>
         ArgumentNullException.ThrowIfNull(admissionController);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxRooms);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxPeersPerRoom);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(operationTimeout, TimeSpan.Zero);
         ArgumentNullException.ThrowIfNull(metrics);
         ArgumentNullException.ThrowIfNull(logger);
 
@@ -33,6 +36,7 @@ public sealed class SyncAdmissionCoordinator<TConnection>
         this.admissionController = admissionController;
         this.maxRooms = maxRooms;
         this.maxPeersPerRoom = maxPeersPerRoom;
+        this.operationTimeout = operationTimeout;
         this.metrics = metrics;
         this.logger = logger;
     }
@@ -61,12 +65,13 @@ public sealed class SyncAdmissionCoordinator<TConnection>
 
         try
         {
+            using var timeout = CreateOperationTimeout(cancellationToken);
             var distributedResult = await admissionController.TryJoinAsync(
                 room,
                 connectionId,
                 maxRooms,
                 maxPeersPerRoom,
-                cancellationToken);
+                timeout.Token).WaitAsync(timeout.Token);
             if (distributedResult is SyncJoinResult.Joined)
             {
                 distributedAdmissions[connectionId] = room;
@@ -104,7 +109,9 @@ public sealed class SyncAdmissionCoordinator<TConnection>
 
         try
         {
-            await admissionController.PeerLeftAsync(admittedRoom, connectionId, cancellationToken);
+            using var timeout = CreateOperationTimeout(cancellationToken);
+            await admissionController.PeerLeftAsync(admittedRoom, connectionId, timeout.Token)
+                .WaitAsync(timeout.Token);
         }
         catch (Exception exception) when (exception is not OperationCanceledException ||
                                           !cancellationToken.IsCancellationRequested)
@@ -112,5 +119,12 @@ public sealed class SyncAdmissionCoordinator<TConnection>
             metrics.AdmissionControllerFailed();
             SyncLog.AdmissionControllerLeaveFailed(logger, exception, admittedRoom);
         }
+    }
+
+    private CancellationTokenSource CreateOperationTimeout(CancellationToken cancellationToken)
+    {
+        var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(operationTimeout);
+        return timeout;
     }
 }

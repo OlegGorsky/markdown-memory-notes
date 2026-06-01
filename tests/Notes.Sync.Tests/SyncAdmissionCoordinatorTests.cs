@@ -44,6 +44,24 @@ public sealed class SyncAdmissionCoordinatorTests
     }
 
     [Fact]
+    public async Task TryJoinAsyncFallsBackToLocalJoinWhenAdmissionControllerTimesOut()
+    {
+        var registry = new SyncRoomRegistry<string>(MaxRooms, MaxPeersPerRoom);
+        var admission = new HangingAdmissionController();
+        var metrics = new SyncMetrics();
+        var coordinator = CreateCoordinator(registry, admission, metrics, operationTimeout: TimeSpan.FromMilliseconds(20));
+        var connectionId = Guid.NewGuid();
+
+        var result = await coordinator.TryJoinAsync(Room, connectionId, "peer-a", CancellationToken.None)
+            .WaitAsync(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+
+        Assert.Equal(SyncJoinResult.Joined, result);
+        Assert.Equal(new SyncRoomStats(Rooms: 1, Connections: 1), registry.Stats);
+        Assert.Equal(1, admission.JoinAttempts);
+        Assert.Equal(1, metrics.Snapshot().AdmissionControllerFailed);
+    }
+
+    [Fact]
     public async Task PeerLeftAsyncDoesNotReleaseDistributedAdmissionAfterFallbackJoin()
     {
         var registry = new SyncRoomRegistry<string>(MaxRooms, MaxPeersPerRoom);
@@ -81,16 +99,38 @@ public sealed class SyncAdmissionCoordinatorTests
         Assert.Equal((Room, connectionId), admission.Left);
     }
 
+    [Fact]
+    public async Task PeerLeftAsyncRemovesLocalPeerWhenAdmissionControllerTimesOut()
+    {
+        var registry = new SyncRoomRegistry<string>(MaxRooms, MaxPeersPerRoom);
+        var admission = new HangingLeaveAdmissionController();
+        var metrics = new SyncMetrics();
+        var coordinator = CreateCoordinator(registry, admission, metrics, operationTimeout: TimeSpan.FromMilliseconds(20));
+        var connectionId = Guid.NewGuid();
+        Assert.Equal(
+            SyncJoinResult.Joined,
+            await coordinator.TryJoinAsync(Room, connectionId, "peer-a", CancellationToken.None));
+
+        await coordinator.PeerLeftAsync(Room, connectionId, CancellationToken.None)
+            .WaitAsync(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+
+        Assert.Equal(new SyncRoomStats(Rooms: 0, Connections: 0), registry.Stats);
+        Assert.Equal(1, admission.LeaveAttempts);
+        Assert.Equal(1, metrics.Snapshot().AdmissionControllerFailed);
+    }
+
     private static SyncAdmissionCoordinator<string> CreateCoordinator(
         SyncRoomRegistry<string> registry,
         ISyncAdmissionController admission,
-        SyncMetrics metrics)
+        SyncMetrics metrics,
+        TimeSpan? operationTimeout = null)
     {
         return new SyncAdmissionCoordinator<string>(
             registry,
             admission,
             MaxRooms,
             MaxPeersPerRoom,
+            operationTimeout ?? TimeSpan.FromSeconds(1),
             metrics,
             NullLogger.Instance);
     }
@@ -117,6 +157,51 @@ public sealed class SyncAdmissionCoordinatorTests
         {
             Left = (room, connectionId);
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class HangingAdmissionController : ISyncAdmissionController
+    {
+        public bool IsDistributed => true;
+        public int JoinAttempts { get; private set; }
+
+        public async Task<SyncJoinResult> TryJoinAsync(
+            string room,
+            Guid connectionId,
+            int maxRooms,
+            int maxPeersPerRoom,
+            CancellationToken cancellationToken)
+        {
+            JoinAttempts++;
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return SyncJoinResult.Joined;
+        }
+
+        public Task PeerLeftAsync(string room, Guid connectionId, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class HangingLeaveAdmissionController : ISyncAdmissionController
+    {
+        public bool IsDistributed => true;
+        public int LeaveAttempts { get; private set; }
+
+        public Task<SyncJoinResult> TryJoinAsync(
+            string room,
+            Guid connectionId,
+            int maxRooms,
+            int maxPeersPerRoom,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(SyncJoinResult.Joined);
+        }
+
+        public async Task PeerLeftAsync(string room, Guid connectionId, CancellationToken cancellationToken)
+        {
+            LeaveAttempts++;
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
         }
     }
 

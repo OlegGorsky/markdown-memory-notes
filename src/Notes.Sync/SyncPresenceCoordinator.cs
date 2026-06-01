@@ -107,7 +107,9 @@ public sealed class SyncPresenceCoordinator<TConnection> : IDisposable
     {
         try
         {
-            await presenceTracker.PeerJoinedAsync(room, connectionId, cancellationToken);
+            using var timeout = CreateOperationTimeout(cancellationToken);
+            await presenceTracker.PeerJoinedAsync(room, connectionId, timeout.Token)
+                .WaitAsync(timeout.Token);
         }
         catch (Exception exception) when (exception is not OperationCanceledException ||
                                           !cancellationToken.IsCancellationRequested)
@@ -121,7 +123,9 @@ public sealed class SyncPresenceCoordinator<TConnection> : IDisposable
     {
         try
         {
-            await presenceTracker.PeerLeftAsync(room, connectionId, cancellationToken);
+            using var timeout = CreateOperationTimeout(cancellationToken);
+            await presenceTracker.PeerLeftAsync(room, connectionId, timeout.Token)
+                .WaitAsync(timeout.Token);
         }
         catch (Exception exception) when (exception is not OperationCanceledException ||
                                           !cancellationToken.IsCancellationRequested)
@@ -138,7 +142,9 @@ public sealed class SyncPresenceCoordinator<TConnection> : IDisposable
     {
         try
         {
-            return await presenceTracker.GetPeerCountAsync(room, cancellationToken) ?? localPeerCount;
+            using var timeout = CreateOperationTimeout(cancellationToken);
+            return await presenceTracker.GetPeerCountAsync(room, timeout.Token)
+                .WaitAsync(timeout.Token) ?? localPeerCount;
         }
         catch (Exception exception) when (exception is not OperationCanceledException ||
                                           !cancellationToken.IsCancellationRequested)
@@ -147,5 +153,12 @@ public sealed class SyncPresenceCoordinator<TConnection> : IDisposable
             SyncLog.PresenceTrackerCountFailed(logger, exception, room);
             return localPeerCount;
         }
+    }
+
+    private CancellationTokenSource CreateOperationTimeout(CancellationToken cancellationToken)
+    {
+        var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(sendTimeout);
+        return timeout;
     }
 }

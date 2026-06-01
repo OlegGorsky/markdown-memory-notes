@@ -23,6 +23,7 @@ var admissionCoordinator = new SyncAdmissionCoordinator<WebSocket>(
     backplane as ISyncAdmissionController ?? NoopSyncAdmissionController.Instance,
     options.MaxRooms,
     options.MaxPeersPerRoom,
+    options.SendTimeout,
     metrics,
     app.Logger);
 var backplaneBridge = new SyncBackplaneBridge<WebSocket>(

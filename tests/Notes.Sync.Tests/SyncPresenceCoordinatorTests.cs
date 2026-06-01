@@ -69,13 +69,45 @@ public sealed class SyncPresenceCoordinatorTests
         Assert.Equal(1, snapshot.PresenceTrackerCountFailed);
     }
 
+    [Fact]
+    public async Task PeerJoinedAsyncFallsBackToLocalPeerCountWhenPresenceTrackerTimesOut()
+    {
+        var registry = new SyncRoomRegistry<TestPeer>(maxRooms: 1, maxPeersPerRoom: 4);
+        var peer = new TestPeer();
+        var connectionId = Guid.NewGuid();
+        registry.TryJoin(Room, connectionId, peer);
+        await using var backplane = new RecordingBackplane();
+        var tracker = new HangingPresenceTracker();
+        var metrics = new SyncMetrics();
+        using var coordinator = CreateCoordinator(
+            registry,
+            backplane,
+            tracker,
+            metrics,
+            sendTimeout: TimeSpan.FromMilliseconds(20));
+
+        await coordinator.PeerJoinedAsync(Room, connectionId, CancellationToken.None)
+            .WaitAsync(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+
+        AssertPresenceCount(Assert.Single(peer.Messages), 1);
+        var published = Assert.Single(backplane.Published);
+        AssertPresenceCount(published.Message.Payload, 1);
+        var snapshot = metrics.Snapshot();
+        Assert.Equal(1, tracker.JoinAttempts);
+        Assert.Equal(1, tracker.CountAttempts);
+        Assert.Equal(1, snapshot.PresenceTrackerJoinFailed);
+        Assert.Equal(1, snapshot.PresenceTrackerCountFailed);
+    }
+
     private static SyncPresenceCoordinator<TestPeer> CreateCoordinator(
         SyncRoomRegistry<TestPeer> registry,
         ISyncBackplane backplane,
         ISyncPresenceTracker tracker,
-        SyncMetrics? metrics = null)
+        SyncMetrics? metrics = null,
+        TimeSpan? sendTimeout = null)
     {
         metrics ??= new SyncMetrics();
+        var timeout = sendTimeout ?? TimeSpan.FromSeconds(1);
         var broadcaster = new SyncBroadcaster<TestPeer>(
             registry,
             static peer => peer.IsOpen,
@@ -93,7 +125,7 @@ public sealed class SyncPresenceCoordinatorTests
             broadcaster,
             backplane,
             maxMessageBytes: 1024,
-            TimeSpan.FromSeconds(1),
+            timeout,
             metrics,
             NullLogger.Instance);
 #pragma warning restore CA2000
@@ -103,7 +135,7 @@ public sealed class SyncPresenceCoordinatorTests
             broadcaster,
             backplaneBridge,
             tracker,
-            TimeSpan.FromSeconds(1),
+            timeout,
             metrics,
             NullLogger.Instance);
     }
@@ -143,6 +175,31 @@ public sealed class SyncPresenceCoordinatorTests
         public Task<int?> GetPeerCountAsync(string room, CancellationToken cancellationToken)
         {
             return Task.FromResult(PeerCount);
+        }
+    }
+
+    private sealed class HangingPresenceTracker : ISyncPresenceTracker
+    {
+        public bool IsDistributed => true;
+        public int JoinAttempts { get; private set; }
+        public int CountAttempts { get; private set; }
+
+        public async Task PeerJoinedAsync(string room, Guid connectionId, CancellationToken cancellationToken)
+        {
+            JoinAttempts++;
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        }
+
+        public Task PeerLeftAsync(string room, Guid connectionId, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
+        public async Task<int?> GetPeerCountAsync(string room, CancellationToken cancellationToken)
+        {
+            CountAttempts++;
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return null;
         }
     }
 
