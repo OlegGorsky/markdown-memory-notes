@@ -33,6 +33,7 @@ public sealed class SyncRelayMessageTests
     [InlineData("""{"type":"file","path":"notes/a.md","content":null}""")]
     [InlineData("""{"type":"file","path":"notes/a.md","content":"# A","baseHash":"bad hash"}""")]
     [InlineData("""{"type":"delete","path":"notes/a.md","baseHash":"bad hash"}""")]
+    [InlineData("""{"type":"delete","path":"notes/a.md","content":"unneeded payload"}""")]
     [InlineData("""{"type":"file","path":"notes/a.md","content":"# A","messageId":"bad"}""")]
     [InlineData("""{"type":"ack","messageId":"0123456789abcdef0123456789abcdef"}""")]
     public void IsValidRejectsUnsafeMessages(string json)

@@ -46,7 +46,8 @@ public static class SyncRelayMessage
 
             if (type == "delete")
             {
-                return true;
+                return !TryGetSingleProperty(document.RootElement, "content", out var deleteContentElement) ||
+                       deleteContentElement.ValueKind is JsonValueKind.Null;
             }
 
             if (type != "file" ||
