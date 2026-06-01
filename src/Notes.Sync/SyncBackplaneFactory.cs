@@ -12,6 +12,8 @@ public delegate Task<ISyncBackplane> SyncRedisBackplaneConnector(
 
 public static class SyncBackplaneFactory
 {
+    private static readonly TimeSpan RedisReconnectDelay = TimeSpan.FromSeconds(5);
+
     public static async Task<ISyncBackplane> CreateAsync(
         SyncServerOptions options,
         SyncMetrics metrics,
@@ -48,7 +50,18 @@ public static class SyncBackplaneFactory
         }
         catch (Exception exception) when (IsConnectionFailure(exception))
         {
-            return CreateUnavailableBackplane(metrics, logger, exception);
+            metrics.BackplaneHealthCheckFailed();
+            SyncLog.BackplaneConnectFailed(logger, exception);
+            return new RecoveringSyncBackplane(
+                options.BackplaneRedisConnectionString,
+                options.BackplaneChannelPrefix,
+                options.InstanceId,
+                options.MaxBackplaneReceiveQueue,
+                metrics,
+                logger,
+                connectRedisAsync,
+                RedisReconnectDelay,
+                startInBackoff: true);
         }
     }
 
@@ -67,16 +80,6 @@ public static class SyncBackplaneFactory
             maxReceiveQueue,
             metrics,
             logger);
-    }
-
-    private static UnavailableSyncBackplane CreateUnavailableBackplane(
-        SyncMetrics metrics,
-        ILogger logger,
-        Exception exception)
-    {
-        metrics.BackplaneHealthCheckFailed();
-        SyncLog.BackplaneConnectFailed(logger, exception);
-        return UnavailableSyncBackplane.Instance;
     }
 
     private static bool IsConnectionFailure(Exception exception)
