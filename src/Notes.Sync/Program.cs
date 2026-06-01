@@ -11,6 +11,9 @@ var app = builder.Build();
 var rooms = new SyncRoomRegistry<WebSocket>(options.MaxRooms, options.MaxPeersPerRoom);
 var metrics = new SyncMetrics();
 var connections = new SyncConnectionLimiter(options.MaxConnections, options.MaxConnectionsPerClient);
+var connectionAttempts = new SyncConnectionAttemptLimiter(
+    options.MaxConnectionAttemptsPerMinute,
+    TimeSpan.FromMinutes(1));
 var broadcaster = new SyncBroadcaster<WebSocket>(
     rooms,
     static socket => socket.State is WebSocketState.Open,
@@ -73,7 +76,16 @@ async Task HandleSyncRequestAsync(HttpContext context)
         return;
     }
 
-    using var connectionLease = connections.TryAcquire(ClientConnectionKey(context));
+    var clientKey = ClientConnectionKey(context);
+    if (!connectionAttempts.TryConsume(clientKey))
+    {
+        metrics.ConnectionRateLimited();
+        context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        await context.Response.WriteAsync("Connection rate limit exceeded", context.RequestAborted);
+        return;
+    }
+
+    using var connectionLease = connections.TryAcquire(clientKey);
     if (!connectionLease.Acquired)
     {
         metrics.ConnectionLimitRejected();
@@ -278,6 +290,7 @@ app.MapGet("/health", async (CancellationToken cancellationToken) =>
         counters,
         options.MaxConnections,
         options.MaxConnectionsPerClient,
+        options.MaxConnectionAttemptsPerMinute,
         options.MaxPeersPerRoom,
         options.MaxMessageBytes,
         options.MaxMessagesPerMinute,

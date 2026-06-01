@@ -74,7 +74,7 @@ public sealed class SyncConnectionLimiter
         }
     }
 
-    private static string NormalizeKey(string key)
+    internal static string NormalizeKey(string key)
     {
         if (string.IsNullOrWhiteSpace(key))
         {

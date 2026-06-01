@@ -19,6 +19,7 @@ public sealed class SyncServerOptionsTests
         Assert.InRange(options.MaxBackplaneReceiveQueue, 1, 100_000);
         Assert.InRange(options.MaxConnections, options.MaxPeersPerRoom, 100_000);
         Assert.InRange(options.MaxConnectionsPerClient, 1, options.MaxConnections);
+        Assert.InRange(options.MaxConnectionAttemptsPerMinute, 1, 10_000);
         Assert.InRange(options.JoinTimeout, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(30));
         Assert.InRange(options.ReceiveTimeout, TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(3));
         Assert.Empty(options.AllowedOrigins);
@@ -58,15 +59,18 @@ public sealed class SyncServerOptionsTests
     {
         var previousMaxConnections = Environment.GetEnvironmentVariable("MMN_SYNC_MAX_CONNECTIONS");
         var previousMaxConnectionsPerClient = Environment.GetEnvironmentVariable("MMN_SYNC_MAX_CONNECTIONS_PER_CLIENT");
+        var previousMaxConnectionAttempts = Environment.GetEnvironmentVariable("MMN_SYNC_MAX_CONNECTION_ATTEMPTS_PER_MINUTE");
         try
         {
             Environment.SetEnvironmentVariable("MMN_SYNC_MAX_CONNECTIONS", null);
             Environment.SetEnvironmentVariable("MMN_SYNC_MAX_CONNECTIONS_PER_CLIENT", null);
+            Environment.SetEnvironmentVariable("MMN_SYNC_MAX_CONNECTION_ATTEMPTS_PER_MINUTE", null);
             var configuration = new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["Sync:MaxConnections"] = "2500",
-                    ["Sync:MaxConnectionsPerClient"] = "75"
+                    ["Sync:MaxConnectionsPerClient"] = "75",
+                    ["Sync:MaxConnectionAttemptsPerMinute"] = "120"
                 })
                 .Build();
 
@@ -74,11 +78,13 @@ public sealed class SyncServerOptionsTests
 
             Assert.Equal(2500, options.MaxConnections);
             Assert.Equal(75, options.MaxConnectionsPerClient);
+            Assert.Equal(120, options.MaxConnectionAttemptsPerMinute);
         }
         finally
         {
             Environment.SetEnvironmentVariable("MMN_SYNC_MAX_CONNECTIONS", previousMaxConnections);
             Environment.SetEnvironmentVariable("MMN_SYNC_MAX_CONNECTIONS_PER_CLIENT", previousMaxConnectionsPerClient);
+            Environment.SetEnvironmentVariable("MMN_SYNC_MAX_CONNECTION_ATTEMPTS_PER_MINUTE", previousMaxConnectionAttempts);
         }
     }
 

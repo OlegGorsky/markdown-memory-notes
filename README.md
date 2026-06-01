@@ -44,6 +44,7 @@ MMN_SYNC_URL=http://0.0.0.0:5199 \
 MMN_SYNC_ALLOWED_ORIGINS=https://app.example.com \
 MMN_SYNC_MAX_CONNECTIONS=20000 \
 MMN_SYNC_MAX_CONNECTIONS_PER_CLIENT=256 \
+MMN_SYNC_MAX_CONNECTION_ATTEMPTS_PER_MINUTE=600 \
 MMN_SYNC_JOIN_TIMEOUT_SECONDS=10 \
 MMN_SYNC_RECEIVE_TIMEOUT_SECONDS=120 \
 MMN_SYNC_BACKPLANE_RECEIVE_QUEUE=1024 \
@@ -53,7 +54,7 @@ nix develop --command dotnet run --project src/Notes.Sync/Notes.Sync.csproj
 ```
 
 `MMN_SYNC_ALLOWED_ORIGINS` is optional for local development. In production, set it to a comma- or semicolon-separated list of full `http(s)://host[:port]` origins allowed to open browser WebSocket connections. When this allowlist is configured, relay connections without an `Origin` header are rejected.
-`MMN_SYNC_MAX_CONNECTIONS` bounds active relay WebSockets per process, including clients that have not joined a room yet. `MMN_SYNC_MAX_CONNECTIONS_PER_CLIENT` bounds active WebSockets per observed remote client address; raise it when the relay sits behind a trusted reverse proxy that fans many users through one address.
+`MMN_SYNC_MAX_CONNECTIONS` bounds active relay WebSockets per process, including clients that have not joined a room yet. `MMN_SYNC_MAX_CONNECTIONS_PER_CLIENT` bounds active WebSockets per observed remote client address; raise it when the relay sits behind a trusted reverse proxy that fans many users through one address. `MMN_SYNC_MAX_CONNECTION_ATTEMPTS_PER_MINUTE` limits reconnect or handshake churn per observed client address before a WebSocket slot is accepted.
 `MMN_SYNC_JOIN_TIMEOUT_SECONDS` bounds how long a new WebSocket can hold a relay slot before sending its room join payload.
 `MMN_SYNC_RECEIVE_TIMEOUT_SECONDS` bounds how long a joined peer can take to complete one WebSocket message. Keep it above the browser client's lightweight heartbeat interval, which defaults to roughly 45 seconds with jitter, so healthy idle sockets stay open while slow fragmented sends still cannot hold relay slots indefinitely.
 `MMN_SYNC_TRUSTED_PROXIES` and `MMN_SYNC_TRUSTED_NETWORKS` enable `X-Forwarded-For` handling only for explicitly trusted reverse proxies; leave them empty when the relay is directly internet-facing.
@@ -71,7 +72,7 @@ MMN_SYNC_BACKPLANE_CHANNEL_PREFIX=mmn:sync:prod \
 MMN_SYNC_INSTANCE_ID=relay-a
 ```
 
-The relay exposes `/health` and Prometheus text metrics at `/metrics`. `/health` includes `backplaneHealth`; when Redis is configured but unreachable the response body reports `status: "degraded"` and `backplaneHealthy: false`. Watch `mmn_sync_active_backplane_subscriptions`, `mmn_sync_active_send_gates`, `mmn_sync_active_backplane_receive_gates`, `mmn_sync_receive_timed_out_total`, `mmn_sync_peer_cleanup_failed_total`, `mmn_sync_backplane_publish_failed_total`, `mmn_sync_backplane_subscribe_failed_total`, `mmn_sync_backplane_invalid_payload_total`, `mmn_sync_backplane_receive_failed_total`, `mmn_sync_backplane_receive_dropped_total`, `mmn_sync_backplane_health_check_failed_total`, `mmn_sync_presence_tracker_count_failed_total`, `mmn_sync_presence_tracker_heartbeat_failed_total`, and `mmn_sync_admission_controller_failed_total` for Redis/backplane degradation, slow clients, or connection churn issues. `mmn_sync_admission_rejected_room_full_total` and `mmn_sync_admission_rejected_room_limit_total` show global capacity rejections. `mmn_sync_backplane_remote_subscribers_total` should move when messages are delivered across relay instances.
+The relay exposes `/health` and Prometheus text metrics at `/metrics`. `/health` includes `backplaneHealth`; when Redis is configured but unreachable the response body reports `status: "degraded"` and `backplaneHealthy: false`. Watch `mmn_sync_connection_rate_limited_total`, `mmn_sync_active_backplane_subscriptions`, `mmn_sync_active_send_gates`, `mmn_sync_active_backplane_receive_gates`, `mmn_sync_receive_timed_out_total`, `mmn_sync_peer_cleanup_failed_total`, `mmn_sync_backplane_publish_failed_total`, `mmn_sync_backplane_subscribe_failed_total`, `mmn_sync_backplane_invalid_payload_total`, `mmn_sync_backplane_receive_failed_total`, `mmn_sync_backplane_receive_dropped_total`, `mmn_sync_backplane_health_check_failed_total`, `mmn_sync_presence_tracker_count_failed_total`, `mmn_sync_presence_tracker_heartbeat_failed_total`, and `mmn_sync_admission_controller_failed_total` for Redis/backplane degradation, slow clients, or connection churn issues. `mmn_sync_admission_rejected_room_full_total` and `mmn_sync_admission_rejected_room_limit_total` show global capacity rejections. `mmn_sync_backplane_remote_subscribers_total` should move when messages are delivered across relay instances.
 
 ## Projects
 

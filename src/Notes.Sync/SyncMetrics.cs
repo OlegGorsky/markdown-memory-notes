@@ -8,6 +8,7 @@ public sealed class SyncMetrics
     private long messagesRejected;
     private long messagesRateLimited;
     private long connectionLimitRejected;
+    private long connectionRateLimited;
     private long joinTimedOut;
     private long receiveTimedOut;
     private long joinRejected;
@@ -55,6 +56,11 @@ public sealed class SyncMetrics
     public void ConnectionLimitRejected()
     {
         Interlocked.Increment(ref connectionLimitRejected);
+    }
+
+    public void ConnectionRateLimited()
+    {
+        Interlocked.Increment(ref connectionRateLimited);
     }
 
     public void JoinTimedOut()
@@ -208,6 +214,7 @@ public sealed class SyncMetrics
             Interlocked.Read(ref messagesRejected),
             Interlocked.Read(ref messagesRateLimited),
             Interlocked.Read(ref connectionLimitRejected),
+            Interlocked.Read(ref connectionRateLimited),
             Interlocked.Read(ref joinTimedOut),
             Interlocked.Read(ref receiveTimedOut),
             Interlocked.Read(ref joinRejected),
@@ -259,6 +266,7 @@ public sealed class SyncMetrics
             mmn_sync_messages_rejected_total {snapshot.MessagesRejected}
             mmn_sync_messages_rate_limited_total {snapshot.MessagesRateLimited}
             mmn_sync_connection_limit_rejected_total {snapshot.ConnectionLimitRejected}
+            mmn_sync_connection_rate_limited_total {snapshot.ConnectionRateLimited}
             mmn_sync_join_timed_out_total {snapshot.JoinTimedOut}
             mmn_sync_receive_timed_out_total {snapshot.ReceiveTimedOut}
             mmn_sync_join_rejected_total {snapshot.JoinRejected}
@@ -297,6 +305,7 @@ public sealed record SyncMetricSnapshot(
     long MessagesRejected,
     long MessagesRateLimited,
     long ConnectionLimitRejected,
+    long ConnectionRateLimited,
     long JoinTimedOut,
     long ReceiveTimedOut,
     long JoinRejected,

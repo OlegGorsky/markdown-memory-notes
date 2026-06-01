@@ -15,6 +15,7 @@ public sealed class SyncMetricsTests
         metrics.MessageRejected();
         metrics.MessageRateLimited();
         metrics.ConnectionLimitRejected();
+        metrics.ConnectionRateLimited();
         metrics.JoinTimedOut();
         metrics.ReceiveTimedOut();
         metrics.JoinRejected();
@@ -49,6 +50,7 @@ public sealed class SyncMetricsTests
         Assert.Equal(1, snapshot.MessagesRejected);
         Assert.Equal(1, snapshot.MessagesRateLimited);
         Assert.Equal(1, snapshot.ConnectionLimitRejected);
+        Assert.Equal(1, snapshot.ConnectionRateLimited);
         Assert.Equal(1, snapshot.JoinTimedOut);
         Assert.Equal(1, snapshot.ReceiveTimedOut);
         Assert.Equal(1, snapshot.JoinRejected);
@@ -106,6 +108,7 @@ public sealed class SyncMetricsTests
         Assert.Contains("mmn_sync_active_backplane_receive_gates 4", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_messages_received_total 1", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_connection_limit_rejected_total 0", text, StringComparison.Ordinal);
+        Assert.Contains("mmn_sync_connection_rate_limited_total 0", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_join_timed_out_total 0", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_receive_timed_out_total 0", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_join_rejected_total 0", text, StringComparison.Ordinal);
