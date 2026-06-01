@@ -99,23 +99,65 @@ public sealed class SyncPresenceCoordinatorTests
         Assert.Equal(1, snapshot.PresenceTrackerCountFailed);
     }
 
+    [Fact]
+    public async Task PeerJoinedAsyncStartsBackplanePublishBeforeLocalBroadcastCompletes()
+    {
+        var registry = new SyncRoomRegistry<TestPeer>(maxRooms: 1, maxPeersPerRoom: 4);
+        var peer = new TestPeer();
+        var connectionId = Guid.NewGuid();
+        registry.TryJoin(Room, connectionId, peer);
+        var localSendStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseLocalSend = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var backplanePublishStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var backplane = new RecordingBackplane
+        {
+            PublishStarted = () => backplanePublishStarted.SetResult()
+        };
+        var tracker = new FakePresenceTracker { PeerCount = 1 };
+        using var coordinator = CreateCoordinator(
+            registry,
+            backplane,
+            tracker,
+            sendAsync: async (targetPeer, payload, cancellationToken) =>
+            {
+                localSendStarted.SetResult();
+                await releaseLocalSend.Task.WaitAsync(TimeSpan.FromSeconds(1), cancellationToken);
+                targetPeer.Messages.Add(payload);
+            });
+
+        var join = coordinator.PeerJoinedAsync(Room, connectionId, CancellationToken.None);
+        await localSendStarted.Task.WaitAsync(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+        var backplaneStartedBeforeLocalCompleted = await Task.WhenAny(
+            backplanePublishStarted.Task,
+            Task.Delay(100, TestContext.Current.CancellationToken)) == backplanePublishStarted.Task;
+        releaseLocalSend.SetResult();
+
+        await join;
+
+        Assert.True(backplaneStartedBeforeLocalCompleted);
+        AssertPresenceCount(Assert.Single(peer.Messages), 1);
+        AssertPresenceCount(Assert.Single(backplane.Published).Message.Payload, 1);
+    }
+
     private static SyncPresenceCoordinator<TestPeer> CreateCoordinator(
         SyncRoomRegistry<TestPeer> registry,
         ISyncBackplane backplane,
         ISyncPresenceTracker tracker,
         SyncMetrics? metrics = null,
-        TimeSpan? sendTimeout = null)
+        TimeSpan? sendTimeout = null,
+        Func<TestPeer, string, CancellationToken, Task>? sendAsync = null)
     {
         metrics ??= new SyncMetrics();
         var timeout = sendTimeout ?? TimeSpan.FromSeconds(1);
+        sendAsync ??= static (peer, payload, _) =>
+        {
+            peer.Messages.Add(payload);
+            return Task.CompletedTask;
+        };
         var broadcaster = new SyncBroadcaster<TestPeer>(
             registry,
             static peer => peer.IsOpen,
-            static (peer, payload, _) =>
-            {
-                peer.Messages.Add(payload);
-                return Task.CompletedTask;
-            },
+            sendAsync,
             maxFanoutConcurrency: 4,
             metrics);
 #pragma warning disable CA2000 // SyncPresenceCoordinator owns and disposes the bridge.
@@ -226,6 +268,7 @@ public sealed class SyncPresenceCoordinatorTests
     private sealed class RecordingBackplane : ISyncBackplane
     {
         public bool IsEnabled => true;
+        public Action? PublishStarted { get; init; }
         public List<(string Room, SyncBackplaneMessage Message)> Published { get; } = new();
 
         public Task<SyncBackplaneHealth> CheckHealthAsync(CancellationToken cancellationToken)
@@ -246,6 +289,7 @@ public sealed class SyncPresenceCoordinatorTests
             SyncBackplaneMessage message,
             CancellationToken cancellationToken)
         {
+            PublishStarted?.Invoke();
             Published.Add((room, message));
             return Task.FromResult(new SyncBackplanePublishResult(Published: true, RemoteSubscribers: 1));
         }

@@ -95,12 +95,11 @@ public sealed class SyncPresenceCoordinator<TConnection> : IDisposable
         }
 
         var payload = SyncPresenceMessage.Create(peerCount);
-        if (localPeerCount > 0)
-        {
-            await broadcaster.BroadcastAsync(room, ServerSenderId, payload, sendTimeout, logger);
-        }
-
-        await backplaneBridge.PublishAsync(room, ServerSenderId, payload, cancellationToken);
+        await SyncRelayFanout.DeliverAsync(
+            () => localPeerCount > 0
+                ? broadcaster.BroadcastAsync(room, ServerSenderId, payload, sendTimeout, logger)
+                : Task.FromResult(new SyncBroadcastResult(Attempted: 0, Succeeded: 0, Failed: 0)),
+            () => backplaneBridge.PublishAsync(room, ServerSenderId, payload, cancellationToken));
     }
 
     private async Task TrackJoinSafeAsync(string room, Guid connectionId, CancellationToken cancellationToken)
