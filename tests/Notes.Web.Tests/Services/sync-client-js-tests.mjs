@@ -54,10 +54,14 @@ function createHarness() {
     messages: [],
     holdMessages: false,
     rejectNextMessage: false,
+    rejectStatuses: false,
     pendingInvocations,
     invokeMethodAsync(method, arg) {
       if (method === 'OnStatus') {
         this.statuses.push(arg);
+        if (this.rejectStatuses) {
+          return Promise.reject(new Error('status handler failed'));
+        }
       } else if (method === 'OnMessage') {
         this.messages.push(arg);
         if (this.rejectNextMessage) {
@@ -259,8 +263,40 @@ async function testIncomingQueueOverflowReconnectsInsteadOfGrowingUnbounded() {
   assert.equal(harness.FakeWebSocket.instances.length, 2);
 }
 
+async function testStatusCallbackFailuresDoNotCreateUnhandledRejections() {
+  const syncClient = await loadSyncClient();
+  const harness = createHarness();
+  harness.dotNetRef.rejectStatuses = true;
+
+  const unhandled = await didUnhandledRejectionOccurDuring(() => {
+    syncClient.connect('ws://localhost/sync', 'AbCdEfGhIjKlMnOpQrStUv',
+      harness.dotNetRef, 'OnMessage', 'OnStatus', harness.options);
+    harness.FakeWebSocket.instances[0].open();
+  });
+
+  assert.equal(unhandled, false);
+}
+
 function nextTurn() {
   return new Promise(resolve => setImmediate(resolve));
+}
+
+async function didUnhandledRejectionOccurDuring(action) {
+  let handler;
+  const unhandled = new Promise(resolve => {
+    handler = () => resolve(true);
+    process.once('unhandledRejection', handler);
+  });
+
+  try {
+    action();
+    return await Promise.race([
+      unhandled,
+      nextTurn().then(nextTurn).then(() => false)
+    ]);
+  } finally {
+    process.removeListener('unhandledRejection', handler);
+  }
 }
 
 const tests = [
@@ -270,7 +306,8 @@ const tests = [
   testSendFailureStartsReconnect,
   testIncomingMessagesAreDeliveredSequentially,
   testIncomingMessageFailureReportsErrorAndContinues,
-  testIncomingQueueOverflowReconnectsInsteadOfGrowingUnbounded
+  testIncomingQueueOverflowReconnectsInsteadOfGrowingUnbounded,
+  testStatusCallbackFailuresDoNotCreateUnhandledRejections
 ];
 
 for (const test of tests) {

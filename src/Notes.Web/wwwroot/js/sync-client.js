@@ -222,7 +222,13 @@ function handleIncomingOverflow(state, socket) {
 }
 
 function notifyStatus(state, status) {
-    state.dotNetRef.invokeMethodAsync(state.onStatusMethod, status);
+    try {
+        const statusTask = state.dotNetRef.invokeMethodAsync(state.onStatusMethod, status);
+        if (statusTask?.catch) {
+            statusTask.catch(() => {});
+        }
+    } catch {
+    }
 }
 
 function normalizeOptions(options) {
