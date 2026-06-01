@@ -21,6 +21,7 @@ var broadcaster = new SyncBroadcaster<WebSocket>(
     options.MaxFanoutConcurrency,
     metrics);
 await using var backplane = await SyncBackplaneFactory.CreateAsync(options, metrics, app.Logger);
+using var backplaneHealthCache = new SyncBackplaneHealthCache(TimeSpan.FromSeconds(1));
 var admissionCoordinator = new SyncAdmissionCoordinator<WebSocket>(
     rooms,
     backplane as ISyncAdmissionController ?? NoopSyncAdmissionController.Instance,
@@ -280,7 +281,7 @@ app.MapGet("/health", async (CancellationToken cancellationToken) =>
 {
     var stats = rooms.Stats;
     var counters = metrics.Snapshot();
-    var backplaneHealth = await backplane.CheckHealthAsync(cancellationToken);
+    var backplaneHealth = await backplaneHealthCache.GetAsync(backplane.CheckHealthAsync, cancellationToken);
     return Results.Ok(new
     {
         status = backplaneHealth.Healthy ? "ok" : "degraded",
