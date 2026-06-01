@@ -43,6 +43,18 @@ public sealed class SyncJoinPayloadReceiverTests
     }
 
     [Fact]
+    public async Task ReceiveAsyncReturnsTimedOutWhenReceiveReportsTimeout()
+    {
+        var result = await SyncJoinPayloadReceiver.ReceiveAsync(
+            _ => throw new TimeoutException("receive timeout"),
+            TimeSpan.FromSeconds(1),
+            CancellationToken.None);
+
+        Assert.Equal(SyncJoinPayloadStatus.TimedOut, result.Status);
+        Assert.Null(result.Payload);
+    }
+
+    [Fact]
     public async Task ReceiveAsyncPropagatesRequestCancellation()
     {
         using var cancellation = new CancellationTokenSource();

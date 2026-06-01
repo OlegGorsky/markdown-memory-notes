@@ -90,7 +90,11 @@ async Task HandleSyncRequestAsync(HttpContext context)
     try
     {
         var join = await SyncJoinPayloadReceiver.ReceiveAsync(
-            token => ReceiveTextAsync(ws, options.MaxMessageBytes, token),
+            token => SyncWebSocketMessageReceiver.ReceiveTextAsync(
+                ws,
+                options.MaxMessageBytes,
+                options.JoinTimeout,
+                token),
             options.JoinTimeout,
             context.RequestAborted);
         if (join.Status is SyncJoinPayloadStatus.Closed)
@@ -134,7 +138,11 @@ async Task HandleSyncRequestAsync(HttpContext context)
 
         while (ws.State == WebSocketState.Open && !context.RequestAborted.IsCancellationRequested)
         {
-            var message = await ReceiveTextAsync(ws, options.MaxMessageBytes, context.RequestAborted);
+            var message = await SyncWebSocketMessageReceiver.ReceiveTextAsync(
+                ws,
+                options.MaxMessageBytes,
+                options.ReceiveTimeout,
+                context.RequestAborted);
             if (message is null)
             {
                 break;
@@ -198,6 +206,19 @@ async Task HandleSyncRequestAsync(HttpContext context)
     catch (WebSocketException exception)
     {
         SyncLog.SocketClosedUnexpectedly(app.Logger, exception);
+    }
+    catch (TimeoutException exception)
+    {
+        SyncLog.ProtocolViolation(app.Logger, exception);
+        if (room is null)
+        {
+            metrics.JoinTimedOut();
+            await CloseSafeAsync(ws, WebSocketCloseStatus.PolicyViolation, "Join timeout", CancellationToken.None);
+        }
+        else
+        {
+            await CloseSafeAsync(ws, WebSocketCloseStatus.PolicyViolation, "Receive timeout", CancellationToken.None);
+        }
     }
     catch (OperationCanceledException)
     {
@@ -266,6 +287,7 @@ app.MapGet("/health", async (CancellationToken cancellationToken) =>
         options.BackplaneChannelPrefix,
         options.InstanceId,
         joinTimeoutSeconds = options.JoinTimeout.TotalSeconds,
+        receiveTimeoutSeconds = options.ReceiveTimeout.TotalSeconds,
         trustedProxiesConfigured = options.TrustedProxies.Count,
         trustedNetworksConfigured = options.TrustedNetworks.Count,
         allowedOriginsConfigured = options.AllowedOrigins.Count
@@ -285,37 +307,6 @@ app.MapGet("/metrics", () =>
 });
 
 await app.RunAsync(Environment.GetEnvironmentVariable("MMN_SYNC_URL") ?? "http://0.0.0.0:5199");
-
-static async Task<string?> ReceiveTextAsync(WebSocket ws, int maxBytes, CancellationToken cancellationToken)
-{
-    var buffer = new byte[Math.Min(maxBytes, 16 * 1024)];
-    using var stream = new MemoryStream();
-
-    while (true)
-    {
-        var result = await ws.ReceiveAsync(buffer, cancellationToken);
-        if (result.MessageType == WebSocketMessageType.Close)
-        {
-            return null;
-        }
-
-        if (result.MessageType != WebSocketMessageType.Text)
-        {
-            throw new InvalidDataException("Only text messages are supported.");
-        }
-
-        if (stream.Length + result.Count > maxBytes)
-        {
-            throw new InvalidDataException("Message exceeds configured size limit.");
-        }
-
-        stream.Write(buffer, 0, result.Count);
-        if (result.EndOfMessage)
-        {
-            return Encoding.UTF8.GetString(stream.ToArray());
-        }
-    }
-}
 
 static Task SendSocketAsync(WebSocket socket, string message, CancellationToken cancellationToken)
 {

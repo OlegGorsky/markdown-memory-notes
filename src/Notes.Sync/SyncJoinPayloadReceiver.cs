@@ -27,7 +27,16 @@ public static class SyncJoinPayloadReceiver
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(joinTimeout, TimeSpan.Zero);
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var receiveTask = receiveAsync(timeout.Token);
+        Task<string?> receiveTask;
+        try
+        {
+            receiveTask = receiveAsync(timeout.Token);
+        }
+        catch (TimeoutException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return SyncJoinPayloadResult.TimedOut;
+        }
+
         var timeoutTask = Task.Delay(joinTimeout, cancellationToken);
 
         if (await Task.WhenAny(receiveTask, timeoutTask) == timeoutTask)
@@ -50,6 +59,10 @@ public static class SyncJoinPayloadReceiver
             return SyncJoinPayloadResult.TimedOut;
         }
         catch (WebSocketException) when (!cancellationToken.IsCancellationRequested && timeout.IsCancellationRequested)
+        {
+            return SyncJoinPayloadResult.TimedOut;
+        }
+        catch (TimeoutException) when (!cancellationToken.IsCancellationRequested)
         {
             return SyncJoinPayloadResult.TimedOut;
         }

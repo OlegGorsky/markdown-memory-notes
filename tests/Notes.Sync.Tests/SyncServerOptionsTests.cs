@@ -20,6 +20,7 @@ public sealed class SyncServerOptionsTests
         Assert.InRange(options.MaxConnections, options.MaxPeersPerRoom, 100_000);
         Assert.InRange(options.MaxConnectionsPerClient, 1, options.MaxConnections);
         Assert.InRange(options.JoinTimeout, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(30));
+        Assert.InRange(options.ReceiveTimeout, TimeSpan.FromSeconds(1), TimeSpan.FromMinutes(1));
         Assert.Empty(options.AllowedOrigins);
         Assert.Empty(options.TrustedProxies);
         Assert.Empty(options.TrustedNetworks);
@@ -126,6 +127,30 @@ public sealed class SyncServerOptionsTests
         finally
         {
             Environment.SetEnvironmentVariable("MMN_SYNC_JOIN_TIMEOUT_SECONDS", previous);
+        }
+    }
+
+    [Fact]
+    public void FromConfigurationReadsReceiveTimeout()
+    {
+        var previous = Environment.GetEnvironmentVariable("MMN_SYNC_RECEIVE_TIMEOUT_SECONDS");
+        try
+        {
+            Environment.SetEnvironmentVariable("MMN_SYNC_RECEIVE_TIMEOUT_SECONDS", null);
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Sync:ReceiveTimeoutSeconds"] = "7"
+                })
+                .Build();
+
+            var options = SyncServerOptions.FromConfiguration(configuration);
+
+            Assert.Equal(TimeSpan.FromSeconds(7), options.ReceiveTimeout);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MMN_SYNC_RECEIVE_TIMEOUT_SECONDS", previous);
         }
     }
 
