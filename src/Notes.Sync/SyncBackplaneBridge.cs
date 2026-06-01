@@ -80,10 +80,12 @@ public sealed class SyncBackplaneBridge<TConnection> : IDisposable
         metrics.BackplanePublishAttempted();
         try
         {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(sendTimeout);
             var result = await backplane.PublishAsync(
                 room,
                 new SyncBackplaneMessage(instanceId, senderConnectionId, payload),
-                cancellationToken);
+                timeout.Token).WaitAsync(timeout.Token);
             if (result.Published)
             {
                 metrics.BackplanePublishSucceeded(result.RemoteSubscribers);
@@ -123,10 +125,12 @@ public sealed class SyncBackplaneBridge<TConnection> : IDisposable
             metrics.BackplaneSubscribeAttempted();
             try
             {
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeout.CancelAfter(sendTimeout);
                 var subscription = await backplane.SubscribeAsync(
                     room,
                     (message, token) => ReceiveAsync(room, message, token),
-                    cancellationToken);
+                    timeout.Token).WaitAsync(timeout.Token);
                 subscriptions[room] = subscription;
                 Interlocked.Increment(ref subscriptionCount);
                 metrics.BackplaneSubscribeSucceeded();

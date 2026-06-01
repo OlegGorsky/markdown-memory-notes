@@ -180,6 +180,22 @@ public sealed class SyncBackplaneBridgeTests
     }
 
     [Fact]
+    public async Task PublishAsyncTimesOutWhenBackplanePublishHangs()
+    {
+        var registry = new SyncRoomRegistry<TestPeer>(maxRooms: 1, maxPeersPerRoom: 4);
+        await using var backplane = new HangingSyncBackplane();
+        var metrics = new SyncMetrics();
+        using var bridge = CreateBridge("instance-a", registry, backplane, metrics, sendTimeout: TimeSpan.FromMilliseconds(20));
+
+        var result = await bridge.PublishAsync(Room, Guid.NewGuid(), RelayPayload, CancellationToken.None)
+            .WaitAsync(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+
+        Assert.False(result.Published);
+        Assert.Equal(0, result.RemoteSubscribers);
+        Assert.Equal(1, metrics.Snapshot().BackplanePublishFailed);
+    }
+
+    [Fact]
     public async Task EnsureSubscribedAsyncDoesNotFailClientWhenBackplaneFails()
     {
         var registry = new SyncRoomRegistry<TestPeer>(maxRooms: 1, maxPeersPerRoom: 4);
@@ -188,6 +204,24 @@ public sealed class SyncBackplaneBridgeTests
         using var bridge = CreateBridge("instance-a", registry, backplane, metrics);
 
         await bridge.EnsureSubscribedAsync(Room, CancellationToken.None);
+
+        var snapshot = metrics.Snapshot();
+        Assert.Equal(1, snapshot.BackplaneSubscribeAttempted);
+        Assert.Equal(0, snapshot.BackplaneSubscribeSucceeded);
+        Assert.Equal(1, snapshot.BackplaneSubscribeFailed);
+        Assert.Equal(0, bridge.SubscriptionCount);
+    }
+
+    [Fact]
+    public async Task EnsureSubscribedAsyncTimesOutWhenBackplaneSubscribeHangs()
+    {
+        var registry = new SyncRoomRegistry<TestPeer>(maxRooms: 1, maxPeersPerRoom: 4);
+        await using var backplane = new HangingSyncBackplane();
+        var metrics = new SyncMetrics();
+        using var bridge = CreateBridge("instance-a", registry, backplane, metrics, sendTimeout: TimeSpan.FromMilliseconds(20));
+
+        await bridge.EnsureSubscribedAsync(Room, CancellationToken.None)
+            .WaitAsync(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
 
         var snapshot = metrics.Snapshot();
         Assert.Equal(1, snapshot.BackplaneSubscribeAttempted);
@@ -241,7 +275,8 @@ public sealed class SyncBackplaneBridgeTests
         SyncRoomRegistry<TestPeer> registry,
         ISyncBackplane? backplane = null,
         SyncMetrics? metrics = null,
-        Func<TestPeer, string, CancellationToken, Task>? sendAsync = null)
+        Func<TestPeer, string, CancellationToken, Task>? sendAsync = null,
+        TimeSpan? sendTimeout = null)
     {
         metrics ??= new SyncMetrics();
         sendAsync ??= static (peer, payload, _) =>
@@ -262,7 +297,7 @@ public sealed class SyncBackplaneBridgeTests
             broadcaster,
             backplane ?? NoopSyncBackplane.Instance,
             maxMessageBytes: 1024,
-            TimeSpan.FromSeconds(1),
+            sendTimeout ?? TimeSpan.FromSeconds(1),
             metrics,
             NullLogger.Instance);
     }
@@ -332,6 +367,39 @@ public sealed class SyncBackplaneBridgeTests
             CancellationToken cancellationToken)
         {
             throw new InvalidOperationException("Backplane unavailable.");
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class HangingSyncBackplane : ISyncBackplane
+    {
+        public bool IsEnabled => true;
+
+        public Task<SyncBackplaneHealth> CheckHealthAsync(CancellationToken cancellationToken)
+        {
+            return Task.FromResult(SyncBackplaneHealth.Unavailable);
+        }
+
+        public async Task<IDisposable> SubscribeAsync(
+            string room,
+            Func<SyncBackplaneMessage, CancellationToken, Task> onMessage,
+            CancellationToken cancellationToken)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return new DisposableAction(static () => { });
+        }
+
+        public async Task<SyncBackplanePublishResult> PublishAsync(
+            string room,
+            SyncBackplaneMessage message,
+            CancellationToken cancellationToken)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return new SyncBackplanePublishResult(Published: true, RemoteSubscribers: 1);
         }
 
         public ValueTask DisposeAsync()
