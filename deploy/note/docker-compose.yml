@@ -55,6 +55,7 @@ services:
   note-redis:
     container_name: note-redis
     image: redis:7-alpine
+    user: "999:1000"
     command:
       - redis-server
       - --save
