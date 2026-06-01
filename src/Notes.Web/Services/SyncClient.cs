@@ -151,7 +151,7 @@ public sealed class SyncClient : IAsyncDisposable
     public async Task SendRepairRequestAsync(SyncRepairManifest manifest)
     {
         ArgumentNullException.ThrowIfNull(manifest);
-        var json = SyncRepairRequestMessage.Create(manifest.Entries, manifest.Truncated, SyncMessageId.New());
+        var json = SyncRepairRequestMessage.CreateBounded(manifest, maxOutgoingMessageBytes, SyncMessageId.New());
         ValidateOutgoingMessageSize(json, "entries");
 
         if (!CanSendNow)

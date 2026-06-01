@@ -1,4 +1,5 @@
 using Notes.Core.Sync;
+using System.Text;
 using Xunit;
 
 namespace Notes.Core.Tests.Sync;
@@ -32,6 +33,29 @@ public sealed class SyncRepairRequestMessageTests
         Assert.Equal("notes/a.md", entry.Path);
         Assert.Equal(hash, entry.Hash);
         Assert.False(request.Truncated);
+    }
+
+    [Fact]
+    public void CreateBoundedTrimsEntriesToFitMessageBudget()
+    {
+        var manifest = new SyncRepairManifest(
+            [
+                new SyncManifestEntry("notes/a.md", SyncContentHash.Compute("# A")),
+                new SyncManifestEntry("notes/b.md", SyncContentHash.Compute("# B")),
+                new SyncManifestEntry("notes/c.md", SyncContentHash.Compute("# C"))
+            ],
+            Truncated: false);
+
+        var json = SyncRepairRequestMessage.CreateBounded(
+            manifest,
+            maxMessageBytes: 260,
+            messageId: "0123456789abcdef0123456789abcdef");
+
+        Assert.True(Encoding.UTF8.GetByteCount(json) <= 260);
+        Assert.True(SyncRepairRequestMessage.TryParse(json, out var request));
+        Assert.True(request.Truncated);
+        Assert.True(request.Entries.Count < manifest.Entries.Count);
+        Assert.NotEmpty(request.Entries);
     }
 
     [Theory]

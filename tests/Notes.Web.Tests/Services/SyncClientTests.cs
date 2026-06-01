@@ -1,6 +1,7 @@
 using MemoryNotes.Web.Services;
 using Microsoft.JSInterop;
 using Notes.Core.Sync;
+using System.Text;
 using Xunit;
 
 namespace Notes.Web.Tests.Services;
@@ -224,6 +225,34 @@ public sealed class SyncClientTests
         Assert.Contains("\"truncated\":false", message, StringComparison.Ordinal);
         Assert.Contains("\"messageId\":\"", message, StringComparison.Ordinal);
         Assert.DoesNotContain("\"Type\"", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SendRepairRequestAsyncTrimsManifestToOutgoingMessageBudget()
+    {
+        var js = new CapturingJsRuntime();
+        await using var client = new SyncClient(
+            js,
+            maxQueuedOperations: 256,
+            ackTimeout: TimeSpan.FromSeconds(10),
+            maxOutgoingMessageBytes: 260);
+        await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "AbCdEfGhIjKlMnOpQrStUv", (_, _) => Task.CompletedTask);
+        await client.OnStatus("connected");
+        await client.OnMessage("""{"type":"presence","peerCount":2}""");
+
+        await client.SendRepairRequestAsync(new SyncRepairManifest(
+            [
+                new SyncManifestEntry("notes/a.md", SyncContentHash.Compute("# A")),
+                new SyncManifestEntry("notes/b.md", SyncContentHash.Compute("# B")),
+                new SyncManifestEntry("notes/c.md", SyncContentHash.Compute("# C"))
+            ],
+            Truncated: false));
+
+        var message = Assert.Single(js.Module.SentMessages);
+        Assert.True(Encoding.UTF8.GetByteCount(message) <= 260);
+        Assert.True(SyncRepairRequestMessage.TryParse(message, out var request));
+        Assert.True(request.Truncated);
+        Assert.True(request.Entries.Count is > 0 and < 3);
     }
 
     [Fact]

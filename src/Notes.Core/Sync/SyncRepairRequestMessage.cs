@@ -29,6 +29,29 @@ public static class SyncRepairRequestMessage
             JsonOptions);
     }
 
+    public static string CreateBounded(SyncRepairManifest manifest, int maxMessageBytes, string messageId)
+    {
+        ArgumentNullException.ThrowIfNull(manifest);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxMessageBytes);
+        if (!SyncMessageId.IsValid(messageId))
+        {
+            throw new ArgumentException("Sync message id is not valid.", nameof(messageId));
+        }
+
+        var normalized = NormalizeEntries(manifest.Entries);
+        for (var count = normalized.Count; count >= 0; count--)
+        {
+            var truncated = manifest.Truncated || count < normalized.Count;
+            var json = Serialize(normalized.Take(count).ToArray(), truncated, messageId);
+            if (Encoding.UTF8.GetByteCount(json) <= maxMessageBytes)
+            {
+                return json;
+            }
+        }
+
+        throw new ArgumentException("Sync repair request is too large.", nameof(maxMessageBytes));
+    }
+
     public static bool IsValid(string json, int maxMessageBytes)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxMessageBytes);
@@ -87,6 +110,16 @@ public static class SyncRepairRequestMessage
         }
 
         return normalized;
+    }
+
+    private static string Serialize(
+        IReadOnlyList<SyncManifestEntry> entries,
+        bool truncated,
+        string messageId)
+    {
+        return JsonSerializer.Serialize(
+            new RepairRequestMessage("repairRequest", entries, truncated, messageId),
+            JsonOptions);
     }
 
     private static bool TryReadEntries(JsonElement entriesElement, out IReadOnlyList<SyncManifestEntry> entries)
