@@ -37,4 +37,21 @@ public sealed class SyncRelayFanoutTests
         Assert.Equal(1, result.Broadcast.Succeeded);
         Assert.Equal(1, result.Backplane.RemoteSubscribers);
     }
+
+    [Fact]
+    public async Task DeliverAsyncStartsBackplanePublishWhenLocalBroadcastThrowsSynchronously()
+    {
+        var backplaneStarted = false;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            SyncRelayFanout.DeliverAsync(
+                () => throw new InvalidOperationException("Local broadcast failed before returning a task."),
+                () =>
+                {
+                    backplaneStarted = true;
+                    return Task.FromResult(new SyncBackplanePublishResult(Published: true, RemoteSubscribers: 1));
+                }));
+
+        Assert.True(backplaneStarted);
+    }
 }

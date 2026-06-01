@@ -13,12 +13,24 @@ public static class SyncRelayFanout
         ArgumentNullException.ThrowIfNull(broadcastAsync);
         ArgumentNullException.ThrowIfNull(publishBackplaneAsync);
 
-        var broadcastTask = broadcastAsync();
-        var backplaneTask = publishBackplaneAsync();
+        var broadcastTask = Start(broadcastAsync);
+        var backplaneTask = Start(publishBackplaneAsync);
 
         await Task.WhenAll(broadcastTask, backplaneTask);
         return new SyncRelayFanoutResult(
             await broadcastTask,
             await backplaneTask);
+    }
+
+    private static Task<TResult> Start<TResult>(Func<Task<TResult>> operation)
+    {
+        try
+        {
+            return operation();
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            return Task.FromException<TResult>(exception);
+        }
     }
 }
