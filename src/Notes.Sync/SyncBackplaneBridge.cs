@@ -123,21 +123,29 @@ public sealed class SyncBackplaneBridge<TConnection> : IDisposable
             }
 
             metrics.BackplaneSubscribeAttempted();
+            Task<IDisposable>? subscribeTask = null;
             try
             {
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 timeout.CancelAfter(sendTimeout);
-                var subscription = await backplane.SubscribeAsync(
+                subscribeTask = backplane.SubscribeAsync(
                     room,
                     (message, token) => ReceiveAsync(room, message, token),
-                    timeout.Token).WaitAsync(timeout.Token);
+                    timeout.Token);
+                var subscription = await subscribeTask.WaitAsync(timeout.Token);
                 subscriptions[room] = subscription;
                 Interlocked.Increment(ref subscriptionCount);
                 metrics.BackplaneSubscribeSucceeded();
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                DisposeSubscriptionWhenCompleted(subscribeTask, room, logger);
+                throw;
+            }
             catch (Exception exception) when (exception is not OperationCanceledException ||
                                               !cancellationToken.IsCancellationRequested)
             {
+                DisposeSubscriptionWhenCompleted(subscribeTask, room, logger);
                 metrics.BackplaneSubscribeFailed();
                 SyncLog.BackplaneSubscribeFailed(logger, exception, room);
             }
@@ -146,6 +154,46 @@ public sealed class SyncBackplaneBridge<TConnection> : IDisposable
         {
             subscriptionGate.Release();
         }
+    }
+
+    private static void DisposeSubscriptionWhenCompleted(
+        Task<IDisposable>? subscriptionTask,
+        string room,
+        ILogger logger)
+    {
+        if (subscriptionTask is null)
+        {
+            return;
+        }
+
+        _ = subscriptionTask.ContinueWith(
+            static (completedTask, state) =>
+            {
+                var (room, logger) = ((string Room, ILogger Logger))state!;
+                if (completedTask.IsCompletedSuccessfully)
+                {
+                    try
+                    {
+                        completedTask.Result.Dispose();
+                    }
+                    catch (OperationCanceledException exception)
+                    {
+                        SyncLog.BackplaneSubscribeFailed(logger, exception, room);
+                    }
+                    catch (Exception exception) when (exception is not OperationCanceledException)
+                    {
+                        SyncLog.BackplaneSubscribeFailed(logger, exception, room);
+                    }
+                }
+                else if (completedTask.IsFaulted)
+                {
+                    _ = completedTask.Exception;
+                }
+            },
+            (room, logger),
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 
     public async Task ReleaseIfRoomEmptyAsync(string room)
