@@ -5,40 +5,38 @@ using Notes.Core.Sync;
 
 namespace Notes.Sync;
 
+public enum SyncRelayMessageKind
+{
+    Invalid,
+    Heartbeat,
+    Relay
+}
+
+public readonly record struct SyncRelayMessageClassification(
+    SyncRelayMessageKind Kind,
+    string? MessageId);
+
 public static class SyncRelayMessage
 {
     public static bool IsHeartbeat(string json)
     {
-        try
-        {
-            using var document = JsonDocument.Parse(json);
-            if (document.RootElement.ValueKind is not JsonValueKind.Object ||
-                HasDuplicateProtocolProperty(document.RootElement) ||
-                !TryGetSingleProperty(document.RootElement, "type", out var typeElement) ||
-                typeElement.ValueKind is not JsonValueKind.String ||
-                typeElement.GetString() != "heartbeat")
-            {
-                return false;
-            }
-
-            var propertyCount = 0;
-            foreach (var _ in document.RootElement.EnumerateObject())
-            {
-                propertyCount++;
-            }
-
-            return propertyCount == 1;
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
+        return TryClassify(json, int.MaxValue, out var classification) &&
+               classification.Kind is SyncRelayMessageKind.Heartbeat;
     }
 
     public static bool IsValid(string json, int maxContentBytes)
     {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxContentBytes);
+        return TryClassify(json, maxContentBytes, out var classification) &&
+               classification.Kind is SyncRelayMessageKind.Relay;
+    }
 
+    public static bool TryClassify(
+        string json,
+        int maxContentBytes,
+        out SyncRelayMessageClassification classification)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxContentBytes);
+        classification = default;
         try
         {
             using var document = JsonDocument.Parse(json);
@@ -59,9 +57,31 @@ public static class SyncRelayMessage
             }
 
             var type = typeElement.GetString();
+            if (type == "heartbeat")
+            {
+                if (!HasSingleProperty(document.RootElement))
+                {
+                    return false;
+                }
+
+                classification = new SyncRelayMessageClassification(
+                    SyncRelayMessageKind.Heartbeat,
+                    MessageId: null);
+                return true;
+            }
+
             if (type == "repairRequest")
             {
-                return SyncRepairRequestMessage.IsValid(json, maxContentBytes);
+                if (!SyncRepairRequestMessage.IsValid(json, maxContentBytes) ||
+                    !TryGetOptionalMessageId(document.RootElement, out var repairMessageId))
+                {
+                    return false;
+                }
+
+                classification = new SyncRelayMessageClassification(
+                    SyncRelayMessageKind.Relay,
+                    repairMessageId);
+                return true;
             }
 
             if (!TryGetSingleProperty(document.RootElement, "path", out var pathElement) ||
@@ -72,15 +92,23 @@ public static class SyncRelayMessage
             }
 
             if (!HasValidOptionalBaseHash(document.RootElement) ||
-                !HasValidOptionalMessageId(document.RootElement))
+                !TryGetOptionalMessageId(document.RootElement, out var messageId))
             {
                 return false;
             }
 
             if (type == "delete")
             {
-                return !TryGetSingleProperty(document.RootElement, "content", out var deleteContentElement) ||
-                       deleteContentElement.ValueKind is JsonValueKind.Null;
+                if (TryGetSingleProperty(document.RootElement, "content", out var deleteContentElement) &&
+                    deleteContentElement.ValueKind is not JsonValueKind.Null)
+                {
+                    return false;
+                }
+
+                classification = new SyncRelayMessageClassification(
+                    SyncRelayMessageKind.Relay,
+                    messageId);
+                return true;
             }
 
             if (type != "file" ||
@@ -91,7 +119,15 @@ public static class SyncRelayMessage
             }
 
             var content = contentElement.GetString() ?? string.Empty;
-            return Encoding.UTF8.GetByteCount(content) <= maxContentBytes;
+            if (Encoding.UTF8.GetByteCount(content) > maxContentBytes)
+            {
+                return false;
+            }
+
+            classification = new SyncRelayMessageClassification(
+                SyncRelayMessageKind.Relay,
+                messageId);
+            return true;
         }
         catch (JsonException)
         {
@@ -139,16 +175,43 @@ public static class SyncRelayMessage
                SyncContentHash.IsValid(baseHashElement.GetString());
     }
 
-    private static bool HasValidOptionalMessageId(JsonElement element)
+    private static bool TryGetOptionalMessageId(JsonElement element, out string? messageId)
     {
+        messageId = null;
         if (!TryGetSingleProperty(element, "messageId", out var messageIdElement) ||
             messageIdElement.ValueKind is JsonValueKind.Null)
         {
             return true;
         }
 
-        return messageIdElement.ValueKind is JsonValueKind.String &&
-               SyncMessageId.IsValid(messageIdElement.GetString());
+        if (messageIdElement.ValueKind is not JsonValueKind.String)
+        {
+            return false;
+        }
+
+        var parsedMessageId = messageIdElement.GetString();
+        if (!SyncMessageId.IsValid(parsedMessageId))
+        {
+            return false;
+        }
+
+        messageId = parsedMessageId;
+        return true;
+    }
+
+    private static bool HasSingleProperty(JsonElement element)
+    {
+        var count = 0;
+        foreach (var _ in element.EnumerateObject())
+        {
+            count++;
+            if (count > 1)
+            {
+                return false;
+            }
+        }
+
+        return count == 1;
     }
 
     private static bool HasDuplicateProtocolProperty(JsonElement element)

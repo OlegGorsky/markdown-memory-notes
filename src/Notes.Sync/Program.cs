@@ -161,29 +161,29 @@ async Task HandleSyncRequestAsync(HttpContext context)
                 break;
             }
 
-            if (SyncRelayMessage.IsHeartbeat(message))
-            {
-                continue;
-            }
-
-            if (!SyncRelayMessage.IsValid(message, options.MaxMessageBytes))
+            if (!SyncRelayMessage.TryClassify(message, options.MaxMessageBytes, out var classification))
             {
                 metrics.MessageRejected();
                 await CloseSafeAsync(ws, WebSocketCloseStatus.InvalidPayloadData, "Invalid sync message", context.RequestAborted);
                 break;
             }
 
+            if (classification.Kind is SyncRelayMessageKind.Heartbeat)
+            {
+                continue;
+            }
+
             metrics.MessageReceived();
             var result = await broadcaster.BroadcastAsync(room, connectionId, message, options.SendTimeout, app.Logger);
             var backplaneResult = await backplaneBridge.PublishAsync(room, connectionId, message, context.RequestAborted);
             if ((result.Succeeded > 0 || backplaneResult.RemoteSubscribers > 0) &&
-                SyncRelayMessage.TryGetMessageId(message, out var messageId))
+                classification.MessageId is not null)
             {
                 var ackSent = await broadcaster.SendToPeerAsync(
                     room,
                     connectionId,
                     ws,
-                    SyncAckMessage.Create(messageId),
+                    SyncAckMessage.Create(classification.MessageId),
                     options.SendTimeout,
                     app.Logger);
                 if (!ackSent)

@@ -53,6 +53,43 @@ public sealed class SyncRelayMessageTests
     }
 
     [Fact]
+    public void TryClassifyReturnsRelayMessageIdForValidRelayPayload()
+    {
+        var json = """{"type":"file","path":"notes/a.md","content":"# A","messageId":"0123456789abcdef0123456789abcdef"}""";
+
+        Assert.True(SyncRelayMessage.TryClassify(json, maxContentBytes: 1024, out var classification));
+
+        Assert.Equal(SyncRelayMessageKind.Relay, classification.Kind);
+        Assert.Equal("0123456789abcdef0123456789abcdef", classification.MessageId);
+    }
+
+    [Fact]
+    public void TryClassifyReturnsRelayMessageIdForRepairRequest()
+    {
+        var json = """{"type":"repairRequest","entries":[{"path":"notes/a.md","hash":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}],"truncated":false,"messageId":"abcdefabcdefabcdefabcdefabcdefab"}""";
+
+        Assert.True(SyncRelayMessage.TryClassify(json, maxContentBytes: 1024, out var classification));
+
+        Assert.Equal(SyncRelayMessageKind.Relay, classification.Kind);
+        Assert.Equal("abcdefabcdefabcdefabcdefabcdefab", classification.MessageId);
+    }
+
+    [Fact]
+    public void TryClassifyReturnsHeartbeatForMinimalHeartbeat()
+    {
+        Assert.True(SyncRelayMessage.TryClassify("""{"type":"heartbeat"}""", maxContentBytes: 1024, out var classification));
+
+        Assert.Equal(SyncRelayMessageKind.Heartbeat, classification.Kind);
+        Assert.Null(classification.MessageId);
+    }
+
+    [Fact]
+    public void TryClassifyRejectsInvalidPayloads()
+    {
+        Assert.False(SyncRelayMessage.TryClassify("""{"type":"heartbeat","content":"noise"}""", maxContentBytes: 1024, out _));
+    }
+
+    [Fact]
     public void IsHeartbeatAcceptsMinimalHeartbeat()
     {
         Assert.True(SyncRelayMessage.IsHeartbeat("""{"type":"heartbeat"}"""));
