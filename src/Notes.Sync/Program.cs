@@ -205,7 +205,7 @@ async Task HandleSyncRequestAsync(HttpContext context)
                 }
             }
 
-            if (delivery.Broadcast.Failed > 0 || delivery.Broadcast.Attempted == 0)
+            if (SyncRelayPresenceRefresh.ShouldBroadcast(delivery))
             {
                 await presenceCoordinator.BroadcastAsync(room, context.RequestAborted);
             }
