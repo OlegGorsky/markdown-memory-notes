@@ -245,10 +245,13 @@ else
     private const string SyncOverloadedNotice = "Синхронизация перегружена. Переподключаемся.";
     private const int InitialVisibleTreeChildren = 80;
     private const int TreeChildrenRevealStep = 80;
+    private const int MaxRepairManifestEntries = 512;
+    private const int MaxRepairResponseFiles = 32;
 
     protected override async Task OnInitializedAsync()
     {
         Sync.StateChanged += OnSyncStateChanged;
+        Sync.RepairRequested = OnSyncRepairRequestedAsync;
         _editorModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/text-editor.js");
         _vaults = await VaultMgr.ListAsync();
         if (Session.IsOpen && Session.CurrentVault is not null)
@@ -663,19 +666,67 @@ else
 
     private async Task ConnectSyncRoomAsync(string code)
     {
-        await Sync.ConnectAsync(code, async (path, content, baseHash) =>
-        {
-            var result = content is null
-                ? await Session.SyncChanges.ApplyDeleteAsync(path, baseHash)
-                : await Session.SyncChanges.ApplyFileAsync(path, content, baseHash);
-
-            if (result is global::Notes.Core.Sync.SyncApplyResult.ConflictSaved or
-                global::Notes.Core.Sync.SyncApplyResult.ConflictSkipped)
+        await Sync.ConnectAsync(
+            code,
+            async (path, content, baseHash) =>
             {
-                _notice = "Есть конфликт синхронизации.";
+                var result = content is null
+                    ? await Session.SyncChanges.ApplyDeleteAsync(path, baseHash)
+                    : await Session.SyncChanges.ApplyFileAsync(path, content, baseHash);
+
+                if (result is global::Notes.Core.Sync.SyncApplyResult.ConflictSaved or
+                    global::Notes.Core.Sync.SyncApplyResult.ConflictSkipped)
+                {
+                    _notice = "Есть конфликт синхронизации.";
+                }
+                await InvokeAsync(ReloadNotesAsync);
+            },
+            OnRepairRequestReceivedAsync);
+    }
+
+    private async Task OnSyncRepairRequestedAsync()
+    {
+        if (!CanSendForActiveVault || Session.CurrentVault is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var manifest = await Session.SyncRepair.BuildManifestAsync(
+                Session.CurrentVault,
+                Math.Min(MaxRepairManifestEntries, global::Notes.Core.Sync.SyncRepairRequestMessage.MaxEntries));
+            await Sync.SendRepairRequestAsync(manifest);
+        }
+        catch
+        {
+            _notice = "Синхронизация недоступна.";
+        }
+    }
+
+    private async Task OnRepairRequestReceivedAsync(global::Notes.Core.Sync.SyncRepairRequest request)
+    {
+        if (!CanSendForActiveVault || Session.CurrentVault is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var changes = await Session.SyncRepair.FindChangesForAsync(
+                Session.CurrentVault,
+                request,
+                MaxRepairResponseFiles);
+            foreach (var change in changes)
+            {
+                await TrySendSyncChangeAsync(() =>
+                    Sync.SendFileAsync(change.Path, change.Content, change.BaseHash));
             }
-            await InvokeAsync(ReloadNotesAsync);
-        });
+        }
+        catch
+        {
+            _notice = "Синхронизация недоступна.";
+        }
     }
 
     private async Task<string?> TryReadContentHashAsync(string path)
@@ -807,6 +858,10 @@ else
         if (Sync is not null)
         {
             Sync.StateChanged -= OnSyncStateChanged;
+            if (Sync.RepairRequested == OnSyncRepairRequestedAsync)
+            {
+                Sync.RepairRequested = null;
+            }
         }
 
         _autosaveCts?.Cancel();

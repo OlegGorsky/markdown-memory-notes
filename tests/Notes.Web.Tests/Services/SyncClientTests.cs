@@ -1,5 +1,6 @@
 using MemoryNotes.Web.Services;
 using Microsoft.JSInterop;
+using Notes.Core.Sync;
 using Xunit;
 
 namespace Notes.Web.Tests.Services;
@@ -200,6 +201,83 @@ public sealed class SyncClientTests
         await client.OnMessage(json);
 
         Assert.Empty(received);
+    }
+
+    [Fact]
+    public async Task SendRepairRequestAsyncUsesCamelCaseProtocol()
+    {
+        var js = new CapturingJsRuntime();
+        await using var client = new SyncClient(js);
+        await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "AbCdEfGhIjKlMnOpQrStUv", (_, _) => Task.CompletedTask);
+        await client.OnStatus("connected");
+        await client.OnMessage("""{"type":"presence","peerCount":2}""");
+
+        await client.SendRepairRequestAsync(new SyncRepairManifest(
+            [new SyncManifestEntry("notes/project.md", SyncContentHash.Compute("# Project"))],
+            Truncated: false));
+
+        var message = Assert.Single(js.Module.SentMessages);
+        Assert.Contains("\"type\":\"repairRequest\"", message, StringComparison.Ordinal);
+        Assert.Contains("\"entries\":[", message, StringComparison.Ordinal);
+        Assert.Contains("\"path\":\"notes/project.md\"", message, StringComparison.Ordinal);
+        Assert.Contains("\"hash\":\"", message, StringComparison.Ordinal);
+        Assert.Contains("\"truncated\":false", message, StringComparison.Ordinal);
+        Assert.Contains("\"messageId\":\"", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"Type\"", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task OnMessageInvokesRepairRequestHandler()
+    {
+        await using var client = new SyncClient(new CapturingJsRuntime());
+        var requests = new List<SyncRepairRequest>();
+        var hash = SyncContentHash.Compute("# Remote");
+        await client.ConnectAsync(
+            new Uri("ws://localhost:5199/sync"),
+            "AbCdEfGhIjKlMnOpQrStUv",
+            (_, _, _) => Task.CompletedTask,
+            request =>
+            {
+                requests.Add(request);
+                return Task.CompletedTask;
+            });
+
+        await client.OnMessage($$"""{"type":"repairRequest","entries":[{"path":"notes/project.md","hash":"{{hash}}"}],"truncated":true}""");
+
+        var request = Assert.Single(requests);
+        Assert.True(request.Truncated);
+        var entry = Assert.Single(request.Entries);
+        Assert.Equal("notes/project.md", entry.Path);
+        Assert.Equal(hash, entry.Hash);
+    }
+
+    [Fact]
+    public async Task PeerAppearanceRequestsRepairOncePerConnection()
+    {
+        var js = new CapturingJsRuntime();
+        await using var client = new SyncClient(js);
+        var repairRequests = 0;
+        client.RepairRequested = () =>
+        {
+            repairRequests++;
+            return Task.CompletedTask;
+        };
+
+        await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "AbCdEfGhIjKlMnOpQrStUv", (_, _) => Task.CompletedTask);
+        await client.OnStatus("connected");
+
+        Assert.Equal(0, repairRequests);
+
+        await client.OnMessage("""{"type":"presence","peerCount":2}""");
+        await client.OnMessage("""{"type":"presence","peerCount":2}""");
+
+        Assert.Equal(1, repairRequests);
+
+        await client.OnStatus("disconnected");
+        await client.OnStatus("connected");
+        await client.OnMessage("""{"type":"presence","peerCount":2}""");
+
+        Assert.Equal(2, repairRequests);
     }
 
     [Fact]

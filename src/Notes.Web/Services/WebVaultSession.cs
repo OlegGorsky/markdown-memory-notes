@@ -24,6 +24,7 @@ public sealed class WebVaultSession
         Fragments = new FragmentService();
         QuietMemory = new QuietMemoryService(searchIndex);
         SyncChanges = new SyncChangeApplier(fileSystem);
+        SyncRepair = new SyncRepairService(fileSystem);
     }
 
     public VaultService VaultService { get; }
@@ -33,6 +34,7 @@ public sealed class WebVaultSession
     public FragmentService Fragments { get; }
     public QuietMemoryService QuietMemory { get; }
     public SyncChangeApplier SyncChanges { get; }
+    public SyncRepairService SyncRepair { get; }
 
     public Vault? CurrentVault { get; private set; }
     public bool IsOpen => CurrentVault is not null;

@@ -29,7 +29,9 @@ public sealed class SyncClient : IAsyncDisposable
     private DotNetObjectReference<SyncClient>? _selfRef;
     private string? _room;
     private Func<string, string?, string?, Task>? _onFileReceived;
+    private Func<SyncRepairRequest, Task>? _onRepairRequested;
     private bool hasActiveSocket;
+    private bool repairRequestPending;
     private bool disposed;
 
     public bool IsConnected { get; private set; }
@@ -37,6 +39,7 @@ public sealed class SyncClient : IAsyncDisposable
     public string? Status { get; private set; }
     public string? Room => _room;
     public event EventHandler? StateChanged;
+    public Func<Task>? RepairRequested { get; set; }
 
     public SyncClient(IJSRuntime js)
         : this(js, DefaultMaxQueuedOperations)
@@ -70,12 +73,15 @@ public sealed class SyncClient : IAsyncDisposable
         await ConnectAsync(room, (path, content, _) => onFileReceived(path, content));
     }
 
-    public async Task ConnectAsync(string room, Func<string, string?, string?, Task> onFileReceived)
+    public async Task ConnectAsync(
+        string room,
+        Func<string, string?, string?, Task> onFileReceived,
+        Func<SyncRepairRequest, Task>? onRepairRequested = null)
     {
         ValidateRoom(room);
         var mod = await ModuleAsync();
         var serverUrl = await mod.InvokeAsync<string>("getDefaultSyncUrl");
-        await ConnectAsync(new Uri(serverUrl), room, onFileReceived);
+        await ConnectAsync(new Uri(serverUrl), room, onFileReceived, onRepairRequested);
     }
 
     public async Task ConnectAsync(Uri serverUrl, string room, Func<string, string?, Task> onFileReceived)
@@ -83,7 +89,11 @@ public sealed class SyncClient : IAsyncDisposable
         await ConnectAsync(serverUrl, room, (path, content, _) => onFileReceived(path, content));
     }
 
-    public async Task ConnectAsync(Uri serverUrl, string room, Func<string, string?, string?, Task> onFileReceived)
+    public async Task ConnectAsync(
+        Uri serverUrl,
+        string room,
+        Func<string, string?, string?, Task> onFileReceived,
+        Func<SyncRepairRequest, Task>? onRepairRequested = null)
     {
         ValidateRoom(room);
         if (!string.Equals(_room, room, StringComparison.Ordinal))
@@ -93,9 +103,11 @@ public sealed class SyncClient : IAsyncDisposable
 
         _room = room;
         _onFileReceived = onFileReceived;
+        _onRepairRequested = onRepairRequested;
         IsConnected = false;
         PeerCount = 0;
         Status = null;
+        repairRequestPending = true;
         StateChanged?.Invoke(this, EventArgs.Empty);
         _selfRef ??= DotNetObjectReference.Create(this);
         var mod = await ModuleAsync();
@@ -136,6 +148,30 @@ public sealed class SyncClient : IAsyncDisposable
         await SendOrQueueAsync(new SyncMessage("delete", normalizedPath, null, baseHash, SyncMessageId.New()));
     }
 
+    public async Task SendRepairRequestAsync(SyncRepairManifest manifest)
+    {
+        ArgumentNullException.ThrowIfNull(manifest);
+        var json = SyncRepairRequestMessage.Create(manifest.Entries, manifest.Truncated, SyncMessageId.New());
+        ValidateOutgoingMessageSize(json, "entries");
+
+        if (!CanSendNow)
+        {
+            return;
+        }
+
+        try
+        {
+            if (!await TrySendNowAsync(json))
+            {
+                MarkDisconnected();
+            }
+        }
+        catch (JSException)
+        {
+            MarkDisconnected();
+        }
+    }
+
     public async Task DisconnectAsync()
     {
         var mod = await ModuleAsync();
@@ -162,6 +198,7 @@ public sealed class SyncClient : IAsyncDisposable
             if (CanSendNow)
             {
                 await FlushPendingAsync();
+                await RequestRepairIfPendingAsync();
             }
 
             return;
@@ -174,6 +211,12 @@ public sealed class SyncClient : IAsyncDisposable
                 await FlushPendingAsync();
             }
 
+            return;
+        }
+
+        if (SyncRepairRequestMessage.TryParse(data, out var repairRequest))
+        {
+            await InvokeRepairRequestedAsync(repairRequest);
             return;
         }
 
@@ -218,7 +261,9 @@ public sealed class SyncClient : IAsyncDisposable
                    HasDuplicateProperty(document.RootElement, "content") ||
                    HasDuplicateProperty(document.RootElement, "baseHash") ||
                    HasDuplicateProperty(document.RootElement, "messageId") ||
-                   HasDuplicateProperty(document.RootElement, "peerCount");
+                   HasDuplicateProperty(document.RootElement, "peerCount") ||
+                   HasDuplicateProperty(document.RootElement, "entries") ||
+                   HasDuplicateProperty(document.RootElement, "truncated");
         }
         catch (JsonException)
         {
@@ -253,6 +298,7 @@ public sealed class SyncClient : IAsyncDisposable
         if (!IsConnected)
         {
             ClearInFlight();
+            repairRequestPending = true;
         }
 
         Status = status;
@@ -260,6 +306,7 @@ public sealed class SyncClient : IAsyncDisposable
         if (CanSendNow)
         {
             await FlushPendingAsync();
+            await RequestRepairIfPendingAsync();
         }
     }
 
@@ -331,6 +378,59 @@ public sealed class SyncClient : IAsyncDisposable
             {
             }
         }
+    }
+
+    private async Task InvokeRepairRequestedAsync(SyncRepairRequest request)
+    {
+        var handler = _onRepairRequested;
+        if (handler is null || disposed)
+        {
+            return;
+        }
+
+        try
+        {
+            await receiveGate.WaitAsync();
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
+        try
+        {
+            if (!disposed)
+            {
+                await handler(request);
+            }
+        }
+        finally
+        {
+            try
+            {
+                receiveGate.Release();
+            }
+            catch (ObjectDisposedException) when (disposed)
+            {
+            }
+        }
+    }
+
+    private async Task RequestRepairIfPendingAsync()
+    {
+        if (!repairRequestPending || !CanSendNow || disposed)
+        {
+            return;
+        }
+
+        repairRequestPending = false;
+        var handler = RepairRequested;
+        if (handler is null)
+        {
+            return;
+        }
+
+        await handler();
     }
 
     private async Task SendOrQueueAsync(SyncMessage message)
@@ -418,6 +518,11 @@ public sealed class SyncClient : IAsyncDisposable
     private async Task<bool> TrySendNowAsync(SyncMessage message)
     {
         var json = JsonSerializer.Serialize(message, JsonOptions);
+        return await TrySendNowAsync(json);
+    }
+
+    private async Task<bool> TrySendNowAsync(string json)
+    {
         var mod = await ModuleAsync();
         return await mod.InvokeAsync<bool>("send", json);
     }
@@ -427,6 +532,7 @@ public sealed class SyncClient : IAsyncDisposable
         IsConnected = false;
         PeerCount = 0;
         ClearInFlight();
+        repairRequestPending = true;
         Status = "disconnected";
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -468,6 +574,11 @@ public sealed class SyncClient : IAsyncDisposable
     private void ValidateOutgoingMessageSize(SyncMessage message, string paramName)
     {
         var json = JsonSerializer.Serialize(message, JsonOptions);
+        ValidateOutgoingMessageSize(json, paramName);
+    }
+
+    private void ValidateOutgoingMessageSize(string json, string paramName)
+    {
         if (Encoding.UTF8.GetByteCount(json) > maxOutgoingMessageBytes)
         {
             throw new ArgumentException("Sync message is too large.", paramName);

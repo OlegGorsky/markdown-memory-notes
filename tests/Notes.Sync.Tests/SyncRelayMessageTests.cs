@@ -11,6 +11,7 @@ public sealed class SyncRelayMessageTests
     [InlineData("""{"type":"file","path":"notes/a.md","content":"# A","baseHash":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}""")]
     [InlineData("""{"type":"delete","path":"inbox/2026-05-31.md","content":null}""")]
     [InlineData("""{"type":"delete","path":"inbox/2026-05-31.md","baseHash":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}""")]
+    [InlineData("""{"type":"repairRequest","entries":[{"path":"notes/a.md","hash":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}],"truncated":false,"messageId":"0123456789abcdef0123456789abcdef"}""")]
     public void IsValidAcceptsSupportedMessages(string json)
     {
         Assert.True(SyncRelayMessage.IsValid(json, maxContentBytes: 1024));
@@ -35,6 +36,7 @@ public sealed class SyncRelayMessageTests
     [InlineData("""{"type":"delete","path":"notes/a.md","baseHash":"bad hash"}""")]
     [InlineData("""{"type":"delete","path":"notes/a.md","content":"unneeded payload"}""")]
     [InlineData("""{"type":"file","path":"notes/a.md","content":"# A","messageId":"bad"}""")]
+    [InlineData("""{"type":"repairRequest","entries":[{"path":"notes/a.md","hash":"bad"}]}""")]
     [InlineData("""{"type":"ack","messageId":"0123456789abcdef0123456789abcdef"}""")]
     public void IsValidRejectsUnsafeMessages(string json)
     {

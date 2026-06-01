@@ -30,6 +30,12 @@ public static class SyncRelayMessage
                 return false;
             }
 
+            var type = typeElement.GetString();
+            if (type == "repairRequest")
+            {
+                return SyncRepairRequestMessage.IsValid(json, maxContentBytes);
+            }
+
             if (!TryGetSingleProperty(document.RootElement, "path", out var pathElement) ||
                 pathElement.ValueKind is not JsonValueKind.String ||
                 !VaultRelativePath.TryNormalizeMarkdownContentPath(pathElement.GetString() ?? string.Empty, out _))
@@ -37,7 +43,6 @@ public static class SyncRelayMessage
                 return false;
             }
 
-            var type = typeElement.GetString();
             if (!HasValidOptionalBaseHash(document.RootElement) ||
                 !HasValidOptionalMessageId(document.RootElement))
             {
@@ -124,7 +129,9 @@ public static class SyncRelayMessage
                HasDuplicateProperty(element, "path") ||
                HasDuplicateProperty(element, "content") ||
                HasDuplicateProperty(element, "baseHash") ||
-               HasDuplicateProperty(element, "messageId");
+               HasDuplicateProperty(element, "messageId") ||
+               HasDuplicateProperty(element, "entries") ||
+               HasDuplicateProperty(element, "truncated");
     }
 
     private static bool HasDuplicateProperty(JsonElement element, string name)
