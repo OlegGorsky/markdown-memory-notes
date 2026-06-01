@@ -23,6 +23,7 @@ public sealed class SyncClient : IAsyncDisposable
     private readonly Dictionary<string, string> inFlightPathByMessageId = new(StringComparer.Ordinal);
     private readonly Dictionary<string, CancellationTokenSource> inFlightTimeouts = new(StringComparer.Ordinal);
     private readonly Queue<string> pendingOrder = new();
+    private readonly Lock repairGate = new();
     private readonly SemaphoreSlim flushGate = new(1, 1);
     private readonly SemaphoreSlim receiveGate = new(1, 1);
     private IJSObjectReference? _module;
@@ -32,6 +33,8 @@ public sealed class SyncClient : IAsyncDisposable
     private Func<SyncRepairRequest, Task>? _onRepairRequested;
     private bool hasActiveSocket;
     private bool repairRequestPending;
+    private bool repairRequestInProgress;
+    private long repairRequestGeneration;
     private bool disposed;
 
     public bool IsConnected { get; private set; }
@@ -107,7 +110,7 @@ public sealed class SyncClient : IAsyncDisposable
         IsConnected = false;
         PeerCount = 0;
         Status = null;
-        repairRequestPending = true;
+        MarkRepairPending();
         StateChanged?.Invoke(this, EventArgs.Empty);
         _selfRef ??= DotNetObjectReference.Create(this);
         var mod = await ModuleAsync();
@@ -315,7 +318,7 @@ public sealed class SyncClient : IAsyncDisposable
         if (!IsConnected)
         {
             ClearInFlight();
-            repairRequestPending = true;
+            MarkRepairPending();
         }
 
         Status = status;
@@ -435,19 +438,69 @@ public sealed class SyncClient : IAsyncDisposable
 
     private async Task RequestRepairIfPendingAsync()
     {
-        if (!repairRequestPending || !CanSendNow || disposed)
+        if (!CanSendNow || disposed)
         {
             return;
         }
 
-        var handler = RepairRequested;
-        if (handler is null)
+        Func<Task> handler;
+        long generation;
+        lock (repairGate)
         {
-            return;
+            if (!repairRequestPending || repairRequestInProgress)
+            {
+                return;
+            }
+
+            var pendingHandler = RepairRequested;
+            if (pendingHandler is null)
+            {
+                return;
+            }
+
+            handler = pendingHandler;
+            repairRequestInProgress = true;
+            generation = repairRequestGeneration;
         }
 
-        await handler();
-        repairRequestPending = false;
+        var handlerSucceeded = false;
+        try
+        {
+            await handler();
+            handlerSucceeded = true;
+            lock (repairGate)
+            {
+                if (repairRequestGeneration == generation)
+                {
+                    repairRequestPending = false;
+                }
+            }
+        }
+        finally
+        {
+            var retryPendingRepair = false;
+            lock (repairGate)
+            {
+                repairRequestInProgress = false;
+                retryPendingRepair = handlerSucceeded &&
+                    repairRequestPending &&
+                    repairRequestGeneration != generation;
+            }
+
+            if (retryPendingRepair && !disposed && CanSendNow)
+            {
+                await RequestRepairIfPendingAsync();
+            }
+        }
+    }
+
+    private void MarkRepairPending()
+    {
+        lock (repairGate)
+        {
+            repairRequestPending = true;
+            repairRequestGeneration++;
+        }
     }
 
     private async Task SendOrQueueAsync(SyncMessage message)
@@ -549,7 +602,7 @@ public sealed class SyncClient : IAsyncDisposable
         IsConnected = false;
         PeerCount = 0;
         ClearInFlight();
-        repairRequestPending = true;
+        MarkRepairPending();
         Status = "disconnected";
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
