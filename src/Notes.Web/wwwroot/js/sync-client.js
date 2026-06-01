@@ -12,7 +12,8 @@ const defaultReconnectOptions = {
     maxReconnectDelayMs: 10000,
     reconnectJitterRatio: 0.2,
     maxIncomingMessages: 256,
-    heartbeatIntervalMs: 45000
+    heartbeatIntervalMs: 45000,
+    heartbeatJitterRatio: 0.2
 };
 
 export function getDefaultSyncUrl() {
@@ -163,6 +164,11 @@ function nextReconnectDelay(options) {
         Math.max(0, Math.round(baseDelay * jitter)));
 }
 
+function nextHeartbeatDelay(options) {
+    const jitter = 1 + ((options.random() * 2) - 1) * options.heartbeatJitterRatio;
+    return Math.max(1, Math.round(options.heartbeatIntervalMs * jitter));
+}
+
 function stopReconnectTimer() {
     if (reconnectTimer && reconnectTimerClear) {
         reconnectTimerClear(reconnectTimer);
@@ -193,7 +199,7 @@ function startHeartbeat(state, socket) {
             closeCurrentSocket();
             scheduleReconnect(state);
         }
-    }, state.options.heartbeatIntervalMs);
+    }, nextHeartbeatDelay(state.options));
 }
 
 function stopHeartbeatTimer() {
@@ -292,7 +298,10 @@ function normalizeOptions(options) {
             defaultReconnectOptions.maxIncomingMessages),
         heartbeatIntervalMs: positiveNumberOrDefault(
             options.heartbeatIntervalMs,
-            defaultReconnectOptions.heartbeatIntervalMs)
+            defaultReconnectOptions.heartbeatIntervalMs),
+        heartbeatJitterRatio: boundedRatioOrDefault(
+            options.heartbeatJitterRatio,
+            defaultReconnectOptions.heartbeatJitterRatio)
     };
 }
 
@@ -302,6 +311,10 @@ function positiveNumberOrDefault(value, fallback) {
 
 function nonNegativeNumberOrDefault(value, fallback) {
     return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function boundedRatioOrDefault(value, fallback) {
+    return Number.isFinite(value) && value >= 0 && value <= 0.9 ? value : fallback;
 }
 
 function positiveIntegerOrDefault(value, fallback) {

@@ -312,6 +312,20 @@ async function testHeartbeatRunsWhileSocketIsOpen() {
   assert.deepEqual(JSON.parse(harness.FakeWebSocket.instances[0].sent.at(-1)), { type: 'heartbeat' });
 }
 
+async function testHeartbeatIntervalUsesJitter() {
+  const syncClient = await loadSyncClient();
+  const harness = createHarness();
+  harness.options.heartbeatIntervalMs = 1000;
+  harness.options.heartbeatJitterRatio = 0.2;
+  harness.options.random = () => 0;
+
+  syncClient.connect('ws://localhost/sync', 'AbCdEfGhIjKlMnOpQrStUv',
+    harness.dotNetRef, 'OnMessage', 'OnStatus', harness.options);
+  harness.FakeWebSocket.instances[0].open();
+
+  assert.equal(harness.activeIntervals()[0].delay, 800);
+}
+
 async function testHeartbeatStopsOnDisconnect() {
   const syncClient = await loadSyncClient();
   const harness = createHarness();
@@ -377,6 +391,7 @@ const tests = [
   testIncomingQueueOverflowReconnectsInsteadOfGrowingUnbounded,
   testStatusCallbackFailuresDoNotCreateUnhandledRejections,
   testHeartbeatRunsWhileSocketIsOpen,
+  testHeartbeatIntervalUsesJitter,
   testHeartbeatStopsOnDisconnect,
   testHeartbeatStopsAfterUnexpectedCloseAndRestartsOnReconnect
 ];
