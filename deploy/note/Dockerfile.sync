@@ -1,0 +1,38 @@
+# syntax=docker/dockerfile:1.7
+
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+
+COPY Directory.Build.props MarkdownMemoryNotes.sln ./
+COPY src/Notes.Core/Notes.Core.csproj src/Notes.Core/
+COPY src/Notes.Sync/Notes.Sync.csproj src/Notes.Sync/
+RUN dotnet restore src/Notes.Sync/Notes.Sync.csproj
+
+COPY src/Notes.Core/ src/Notes.Core/
+COPY src/Notes.Sync/ src/Notes.Sync/
+RUN dotnet publish src/Notes.Sync/Notes.Sync.csproj \
+	-c Release \
+	-o /app/publish \
+	--no-restore \
+	/p:UseAppHost=false
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0
+WORKDIR /app
+
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends curl \
+	&& rm -rf /var/lib/apt/lists/*
+
+ENV ASPNETCORE_URLS=http://0.0.0.0:5199 \
+	DOTNET_EnableDiagnostics=0 \
+	MMN_SYNC_URL=http://0.0.0.0:5199
+
+COPY --from=build /app/publish ./
+
+USER $APP_UID
+EXPOSE 5199
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+	CMD curl -fsS http://127.0.0.1:5199/health >/dev/null || exit 1
+
+ENTRYPOINT ["dotnet", "Notes.Sync.dll"]

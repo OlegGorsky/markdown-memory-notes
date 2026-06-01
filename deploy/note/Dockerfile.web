@@ -1,0 +1,27 @@
+# syntax=docker/dockerfile:1.7
+
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+
+COPY Directory.Build.props MarkdownMemoryNotes.sln ./
+COPY src/Notes.Core/Notes.Core.csproj src/Notes.Core/
+COPY src/Notes.Web/Notes.Web.csproj src/Notes.Web/
+RUN dotnet restore src/Notes.Web/Notes.Web.csproj
+
+COPY src/Notes.Core/ src/Notes.Core/
+COPY src/Notes.Web/ src/Notes.Web/
+RUN dotnet publish src/Notes.Web/Notes.Web.csproj \
+	-c Release \
+	-o /app/publish \
+	--no-restore
+
+FROM caddy:2-alpine
+
+COPY deploy/note/Caddyfile.web /etc/caddy/Caddyfile
+COPY --from=build --chown=caddy:caddy /app/publish/wwwroot/ /srv/www/
+
+RUN mkdir -p /data /config \
+	&& chown -R caddy:caddy /data /config /srv/www
+
+USER caddy
+EXPOSE 8080

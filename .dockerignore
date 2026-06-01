@@ -1,0 +1,12 @@
+.git
+.github
+**/.idea
+**/.vs
+**/.vscode
+**/bin
+**/obj
+**/TestResults
+**/node_modules
+**/*.user
+**/*.suo
+**/*.swp

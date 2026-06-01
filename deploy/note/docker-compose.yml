@@ -1,0 +1,89 @@
+name: markdown-memory-notes
+
+services:
+  note-web:
+    container_name: note-web
+    image: markdown-memory-notes-web:latest
+    build:
+      context: ../..
+      dockerfile: deploy/note/Dockerfile.web
+    restart: unless-stopped
+    depends_on:
+      note-sync:
+        condition: service_healthy
+    networks:
+      - note
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/ >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+  note-sync:
+    container_name: note-sync
+    image: markdown-memory-notes-sync:latest
+    build:
+      context: ../..
+      dockerfile: deploy/note/Dockerfile.sync
+    restart: unless-stopped
+    depends_on:
+      note-redis:
+        condition: service_healthy
+    environment:
+      MMN_SYNC_ALLOWED_ORIGINS: https://note.gorseecode.ru
+      MMN_SYNC_BACKPLANE_CHANNEL_PREFIX: note:sync
+      MMN_SYNC_BACKPLANE_REDIS: note-redis:6379,abortConnect=false
+      MMN_SYNC_MAX_CONNECTION_ATTEMPTS_PER_MINUTE: 120
+      MMN_SYNC_MAX_CONNECTIONS: 2000
+      MMN_SYNC_MAX_CONNECTIONS_PER_CLIENT: 64
+      MMN_SYNC_MAX_FANOUT_CONCURRENCY: 16
+      MMN_SYNC_MAX_MESSAGES_PER_MINUTE: 120
+      MMN_SYNC_MAX_PEERS_PER_ROOM: 32
+      MMN_SYNC_TRUSTED_NETWORKS: 172.30.61.0/24
+    networks:
+      - note
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  note-redis:
+    container_name: note-redis
+    image: redis:7-alpine
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --maxmemory
+      - 128mb
+      - --maxmemory-policy
+      - allkeys-lru
+    restart: unless-stopped
+    networks:
+      - note
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
+
+networks:
+  note:
+    name: markdown-memory-notes_note
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.61.0/24
