@@ -217,6 +217,7 @@ async Task HandleSyncRequestAsync(HttpContext context)
         }
         else
         {
+            metrics.ReceiveTimedOut();
             await CloseSafeAsync(ws, WebSocketCloseStatus.PolicyViolation, "Receive timeout", CancellationToken.None);
         }
     }
