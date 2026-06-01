@@ -472,6 +472,52 @@ public sealed class SyncClientTests
     }
 
     [Fact]
+    public async Task RepairRequestRunsAgainWhenPeerLeavesDuringRepair()
+    {
+        var js = new CapturingJsRuntime();
+        await using var client = new SyncClient(js);
+        var repairRequests = 0;
+        var firstStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirst = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var manifest = new SyncRepairManifest(
+            [new SyncManifestEntry("notes/project.md", SyncContentHash.Compute("# Project"))],
+            Truncated: false);
+        client.RepairRequested = async () =>
+        {
+            var request = Interlocked.Increment(ref repairRequests);
+            if (request == 1)
+            {
+                firstStarted.SetResult();
+                await releaseFirst.Task;
+            }
+            else
+            {
+                secondStarted.SetResult();
+            }
+
+            await client.SendRepairRequestAsync(manifest);
+        };
+
+        await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "AbCdEfGhIjKlMnOpQrStUv", (_, _) => Task.CompletedTask);
+        await client.OnStatus("connected");
+
+        var firstPresence = client.OnMessage("""{"type":"presence","peerCount":2}""");
+        await firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+        await client.OnMessage("""{"type":"presence","peerCount":1}""");
+
+        releaseFirst.SetResult();
+        await firstPresence;
+        Assert.Empty(js.Module.SentMessages);
+
+        await client.OnMessage("""{"type":"presence","peerCount":2}""");
+        await secondStarted.Task.WaitAsync(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, repairRequests);
+        Assert.Single(js.Module.SentMessages);
+    }
+
+    [Fact]
     public async Task SendFileAsyncQueuesLatestChangeAndFlushesWhenPeerAppears()
     {
         var js = new CapturingJsRuntime();

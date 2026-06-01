@@ -470,7 +470,7 @@ public sealed class SyncClient : IAsyncDisposable
             handlerSucceeded = true;
             lock (repairGate)
             {
-                if (repairRequestGeneration == generation)
+                if (repairRequestGeneration == generation && CanSendNow)
                 {
                     repairRequestPending = false;
                 }
