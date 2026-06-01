@@ -8,7 +8,8 @@ let reconnectAttempts = 0;
 const defaultReconnectOptions = {
     initialReconnectDelayMs: 500,
     maxReconnectDelayMs: 10000,
-    reconnectJitterRatio: 0.2
+    reconnectJitterRatio: 0.2,
+    maxIncomingMessages: 256
 };
 
 export function getDefaultSyncUrl() {
@@ -35,7 +36,8 @@ export function connect(url, room, dotNetRef, onMessageMethod, onStatusMethod, o
         onStatusMethod,
         options: normalizeOptions(options),
         reconnect: true,
-        messageQueue: Promise.resolve()
+        messageQueue: Promise.resolve(),
+        incomingMessages: 0
     };
 
     openSocket(connection);
@@ -182,17 +184,41 @@ function isCurrentSocket(state, socket) {
 }
 
 function enqueueIncomingMessage(state, socket, data) {
+    if (state.incomingMessages >= state.options.maxIncomingMessages) {
+        handleIncomingOverflow(state, socket);
+        return;
+    }
+
+    state.incomingMessages++;
     state.messageQueue = state.messageQueue
         .catch(() => {})
-        .then(() => {
-            if (!isCurrentSocket(state, socket)) return;
-            return state.dotNetRef.invokeMethodAsync(state.onMessageMethod, data);
+        .then(async () => {
+            try {
+                if (isCurrentSocket(state, socket)) {
+                    await state.dotNetRef.invokeMethodAsync(state.onMessageMethod, data);
+                }
+            } catch {
+                if (isCurrentSocket(state, socket)) {
+                    notifyStatus(state, 'error');
+                }
+            } finally {
+                state.incomingMessages = Math.max(0, state.incomingMessages - 1);
+            }
         })
         .catch(() => {
             if (isCurrentSocket(state, socket)) {
                 notifyStatus(state, 'error');
             }
         });
+}
+
+function handleIncomingOverflow(state, socket) {
+    if (!isCurrentSocket(state, socket)) return;
+
+    state.incomingMessages = 0;
+    notifyStatus(state, 'overloaded');
+    closeCurrentSocket();
+    scheduleReconnect(state);
 }
 
 function notifyStatus(state, status) {
@@ -213,7 +239,10 @@ function normalizeOptions(options) {
             defaultReconnectOptions.maxReconnectDelayMs),
         reconnectJitterRatio: nonNegativeNumberOrDefault(
             options.reconnectJitterRatio,
-            defaultReconnectOptions.reconnectJitterRatio)
+            defaultReconnectOptions.reconnectJitterRatio),
+        maxIncomingMessages: positiveIntegerOrDefault(
+            options.maxIncomingMessages,
+            defaultReconnectOptions.maxIncomingMessages)
     };
 }
 
@@ -223,4 +252,8 @@ function positiveNumberOrDefault(value, fallback) {
 
 function nonNegativeNumberOrDefault(value, fallback) {
     return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function positiveIntegerOrDefault(value, fallback) {
+    return Number.isInteger(value) && value > 0 ? value : fallback;
 }

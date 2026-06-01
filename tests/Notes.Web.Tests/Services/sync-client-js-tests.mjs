@@ -230,6 +230,35 @@ async function testIncomingMessageFailureReportsErrorAndContinues() {
   assert.deepEqual(harness.dotNetRef.messages, ['bad', 'next']);
 }
 
+async function testIncomingQueueOverflowReconnectsInsteadOfGrowingUnbounded() {
+  const syncClient = await loadSyncClient();
+  const harness = createHarness();
+  harness.dotNetRef.holdMessages = true;
+  harness.options.maxIncomingMessages = 2;
+
+  syncClient.connect('ws://localhost/sync', 'AbCdEfGhIjKlMnOpQrStUv',
+    harness.dotNetRef, 'OnMessage', 'OnStatus', harness.options);
+  harness.FakeWebSocket.instances[0].open();
+
+  harness.FakeWebSocket.instances[0].onmessage({ data: 'first' });
+  await nextTurn();
+  harness.FakeWebSocket.instances[0].onmessage({ data: 'second' });
+  harness.FakeWebSocket.instances[0].onmessage({ data: 'third' });
+  await nextTurn();
+
+  assert.equal(harness.dotNetRef.statuses.at(-1), 'overloaded');
+  assert.equal(harness.FakeWebSocket.instances[0].readyState, harness.FakeWebSocket.CLOSED);
+  assert.equal(harness.activeTimers()[0].delay, 100);
+  assert.deepEqual(harness.dotNetRef.messages, ['first']);
+
+  harness.pendingInvocations[0].resolve();
+  await nextTurn();
+  assert.deepEqual(harness.dotNetRef.messages, ['first']);
+
+  harness.runNextTimer();
+  assert.equal(harness.FakeWebSocket.instances.length, 2);
+}
+
 function nextTurn() {
   return new Promise(resolve => setImmediate(resolve));
 }
@@ -240,7 +269,8 @@ const tests = [
   testReconnectBackoffIsBounded,
   testSendFailureStartsReconnect,
   testIncomingMessagesAreDeliveredSequentially,
-  testIncomingMessageFailureReportsErrorAndContinues
+  testIncomingMessageFailureReportsErrorAndContinues,
+  testIncomingQueueOverflowReconnectsInsteadOfGrowingUnbounded
 ];
 
 for (const test of tests) {
