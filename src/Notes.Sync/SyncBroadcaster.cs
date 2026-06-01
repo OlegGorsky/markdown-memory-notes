@@ -80,11 +80,7 @@ public sealed class SyncBroadcaster<TConnection>
             {
                 if (!isOpen(peer.Value))
                 {
-                    if (await RemovePeerAsync(room, peer.Key, logger, CancellationToken.None))
-                    {
-                        metrics.PeerRemoved();
-                    }
-
+                    await RemovePeerAndRecordAsync(room, peer.Key, logger, CancellationToken.None);
                     metrics.DeliveryFailed();
                     Interlocked.Increment(ref failed);
                     return;
@@ -105,11 +101,7 @@ public sealed class SyncBroadcaster<TConnection>
                 catch (Exception exception) when (IsUnavailablePeerException(exception))
                 {
                     SyncLog.RemovingUnavailablePeer(logger, exception, room);
-                    if (await RemovePeerAsync(room, peer.Key, logger, CancellationToken.None))
-                    {
-                        metrics.PeerRemoved();
-                    }
-
+                    await RemovePeerAndRecordAsync(room, peer.Key, logger, CancellationToken.None);
                     metrics.DeliveryFailed();
                     Interlocked.Increment(ref failed);
                 }
@@ -121,6 +113,50 @@ public sealed class SyncBroadcaster<TConnection>
             });
 
         return new SyncBroadcastResult(peers.Length, succeeded, failed);
+    }
+
+    public async Task<bool> SendToPeerAsync(
+        string room,
+        Guid connectionId,
+        TConnection connection,
+        string message,
+        TimeSpan sendTimeout,
+        ILogger logger)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(room);
+        ArgumentNullException.ThrowIfNull(connection);
+        ArgumentNullException.ThrowIfNull(message);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(sendTimeout, TimeSpan.Zero);
+        ArgumentNullException.ThrowIfNull(logger);
+
+        if (!isOpen(connection))
+        {
+            await RemovePeerAndRecordAsync(room, connectionId, logger, CancellationToken.None);
+            return false;
+        }
+
+        using var timeout = new CancellationTokenSource(sendTimeout);
+        var sendGate = GetReferencedSendGate(connectionId);
+        try
+        {
+            using (await sendGate.AcquireAsync(timeout.Token))
+            {
+                await sendAsync(connection, message, timeout.Token);
+            }
+
+            return true;
+        }
+        catch (Exception exception) when (IsUnavailablePeerException(exception))
+        {
+            SyncLog.RemovingUnavailablePeer(logger, exception, room);
+            await RemovePeerAndRecordAsync(room, connectionId, logger, CancellationToken.None);
+            return false;
+        }
+        finally
+        {
+            sendGate.ReleaseReference();
+            TryRemoveForgottenGate(connectionId, sendGate);
+        }
     }
 
     public void ForgetPeer(Guid connectionId)
@@ -141,6 +177,21 @@ public sealed class SyncBroadcaster<TConnection>
             OperationCanceledException or
             InvalidOperationException or
             ObjectDisposedException;
+    }
+
+    private async Task<bool> RemovePeerAndRecordAsync(
+        string room,
+        Guid connectionId,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        if (!await RemovePeerAsync(room, connectionId, logger, cancellationToken))
+        {
+            return false;
+        }
+
+        metrics.PeerRemoved();
+        return true;
     }
 
     private async Task<bool> RemovePeerAsync(

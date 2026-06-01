@@ -164,7 +164,17 @@ async Task HandleSyncRequestAsync(HttpContext context)
             if ((result.Succeeded > 0 || backplaneResult.RemoteSubscribers > 0) &&
                 SyncRelayMessage.TryGetMessageId(message, out var messageId))
             {
-                await SendSocketAsync(ws, SyncAckMessage.Create(messageId), context.RequestAborted);
+                var ackSent = await broadcaster.SendToPeerAsync(
+                    room,
+                    connectionId,
+                    ws,
+                    SyncAckMessage.Create(messageId),
+                    options.SendTimeout,
+                    app.Logger);
+                if (!ackSent)
+                {
+                    break;
+                }
             }
 
             if (result.Failed > 0 || result.Attempted == 0)

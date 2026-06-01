@@ -277,6 +277,53 @@ public sealed class SyncBroadcasterTests
     }
 
     [Fact]
+    public async Task SendToPeerAsyncSerializesWithBroadcastSendsToSamePeer()
+    {
+        var registry = new SyncRoomRegistry<TestPeer>(maxRooms: 1, maxPeersPerRoom: 4);
+        var senderId = Guid.NewGuid();
+        var peerId = Guid.NewGuid();
+        var sharedPeer = new TestPeer();
+        var firstSendEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirstSend = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        registry.TryJoin(Room, senderId, new TestPeer());
+        registry.TryJoin(Room, peerId, sharedPeer);
+        var broadcaster = new SyncBroadcaster<TestPeer>(
+            registry,
+            static peer => peer.IsOpen,
+            async (peer, payload, cancellationToken) =>
+            {
+                peer.EnterSend();
+                try
+                {
+                    if (payload == "broadcast")
+                    {
+                        firstSendEntered.TrySetResult();
+                        await releaseFirstSend.Task.WaitAsync(TimeSpan.FromSeconds(1), cancellationToken);
+                    }
+
+                    peer.Messages.Add(payload);
+                }
+                finally
+                {
+                    peer.LeaveSend();
+                }
+            },
+            maxFanoutConcurrency: 4,
+            new SyncMetrics());
+
+        var broadcast = broadcaster.BroadcastAsync(Room, senderId, "broadcast", TimeSpan.FromSeconds(2), NullLogger.Instance);
+        await firstSendEntered.Task.WaitAsync(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+        var directSend = broadcaster.SendToPeerAsync(Room, peerId, sharedPeer, "ack", TimeSpan.FromSeconds(2), NullLogger.Instance);
+        await Task.Delay(50, TestContext.Current.CancellationToken);
+        releaseFirstSend.SetResult();
+
+        await Task.WhenAll(broadcast, directSend);
+
+        Assert.Equal(1, sharedPeer.MaxObservedSends);
+        Assert.Equal(["broadcast", "ack"], sharedPeer.Messages);
+    }
+
+    [Fact]
     public async Task ForgetPeerRemovesIdleSendGateAfterBroadcastCompletes()
     {
         var registry = new SyncRoomRegistry<TestPeer>(maxRooms: 1, maxPeersPerRoom: 4);
