@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using Notes.Core.Sync;
 using Notes.Sync;
 using Xunit;
 
@@ -7,6 +8,7 @@ namespace Notes.Sync.Tests;
 public sealed class SyncBackplaneBridgeTests
 {
     private const string Room = "RoomBackplane-ABCDEFGH";
+    private const string RelayPayload = """{"type":"file","path":"notes/a.md","content":"# A"}""";
 
     [Fact]
     public async Task ReceiveAsyncBroadcastsRemoteBackplaneMessagesToLocalPeers()
@@ -19,10 +21,29 @@ public sealed class SyncBackplaneBridgeTests
 
         await bridge.ReceiveAsync(
             Room,
-            new SyncBackplaneMessage("instance-b", Guid.NewGuid(), "payload"),
+            new SyncBackplaneMessage("instance-b", Guid.NewGuid(), RelayPayload),
             CancellationToken.None);
 
-        Assert.Equal(["payload"], peer.Messages);
+        Assert.Equal([RelayPayload], peer.Messages);
+        Assert.Equal(1, metrics.Snapshot().BackplaneMessagesReceived);
+    }
+
+    [Fact]
+    public async Task ReceiveAsyncBroadcastsRemotePresenceMessagesToLocalPeers()
+    {
+        var registry = new SyncRoomRegistry<TestPeer>(maxRooms: 1, maxPeersPerRoom: 4);
+        var peer = new TestPeer();
+        registry.TryJoin(Room, Guid.NewGuid(), peer);
+        var metrics = new SyncMetrics();
+        using var bridge = CreateBridge("instance-a", registry, metrics: metrics);
+        var presencePayload = SyncPresenceMessage.Create(peerCount: 2);
+
+        await bridge.ReceiveAsync(
+            Room,
+            new SyncBackplaneMessage("instance-b", Guid.Empty, presencePayload),
+            CancellationToken.None);
+
+        Assert.Equal([presencePayload], peer.Messages);
         Assert.Equal(1, metrics.Snapshot().BackplaneMessagesReceived);
     }
 
@@ -42,6 +63,28 @@ public sealed class SyncBackplaneBridgeTests
 
         Assert.Empty(peer.Messages);
         Assert.Equal(1, metrics.Snapshot().BackplaneMessagesIgnored);
+    }
+
+    [Fact]
+    public async Task ReceiveAsyncRejectsInvalidRemotePayloads()
+    {
+        var registry = new SyncRoomRegistry<TestPeer>(maxRooms: 1, maxPeersPerRoom: 4);
+        var peer = new TestPeer();
+        registry.TryJoin(Room, Guid.NewGuid(), peer);
+        var metrics = new SyncMetrics();
+        using var bridge = CreateBridge("instance-a", registry, metrics: metrics);
+
+        var result = await bridge.ReceiveAsync(
+            Room,
+            new SyncBackplaneMessage(
+                "instance-b",
+                Guid.NewGuid(),
+                """{"type":"ack","messageId":"0123456789abcdef0123456789abcdef"}"""),
+            CancellationToken.None);
+
+        Assert.Empty(peer.Messages);
+        Assert.Equal(0, result.Attempted);
+        Assert.Equal(1, metrics.Snapshot().BackplaneInvalidPayload);
     }
 
     [Fact]
@@ -166,6 +209,7 @@ public sealed class SyncBackplaneBridgeTests
             registry,
             broadcaster,
             backplane ?? NoopSyncBackplane.Instance,
+            maxMessageBytes: 1024,
             TimeSpan.FromSeconds(1),
             metrics,
             NullLogger.Instance);

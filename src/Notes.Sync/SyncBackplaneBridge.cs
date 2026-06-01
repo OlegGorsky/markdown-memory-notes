@@ -1,4 +1,6 @@
+using System.Text;
 using Microsoft.Extensions.Logging;
+using Notes.Core.Sync;
 
 namespace Notes.Sync;
 
@@ -9,6 +11,7 @@ public sealed class SyncBackplaneBridge<TConnection> : IDisposable
     private readonly SyncRoomRegistry<TConnection> rooms;
     private readonly SyncBroadcaster<TConnection> broadcaster;
     private readonly ISyncBackplane backplane;
+    private readonly int maxMessageBytes;
     private readonly TimeSpan sendTimeout;
     private readonly SyncMetrics metrics;
     private readonly ILogger logger;
@@ -21,6 +24,7 @@ public sealed class SyncBackplaneBridge<TConnection> : IDisposable
         SyncRoomRegistry<TConnection> rooms,
         SyncBroadcaster<TConnection> broadcaster,
         ISyncBackplane backplane,
+        int maxMessageBytes,
         TimeSpan sendTimeout,
         SyncMetrics metrics,
         ILogger logger)
@@ -29,6 +33,7 @@ public sealed class SyncBackplaneBridge<TConnection> : IDisposable
         ArgumentNullException.ThrowIfNull(rooms);
         ArgumentNullException.ThrowIfNull(broadcaster);
         ArgumentNullException.ThrowIfNull(backplane);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxMessageBytes);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(sendTimeout, TimeSpan.Zero);
         ArgumentNullException.ThrowIfNull(metrics);
         ArgumentNullException.ThrowIfNull(logger);
@@ -37,6 +42,7 @@ public sealed class SyncBackplaneBridge<TConnection> : IDisposable
         this.rooms = rooms;
         this.broadcaster = broadcaster;
         this.backplane = backplane;
+        this.maxMessageBytes = maxMessageBytes;
         this.sendTimeout = sendTimeout;
         this.metrics = metrics;
         this.logger = logger;
@@ -167,14 +173,28 @@ public sealed class SyncBackplaneBridge<TConnection> : IDisposable
             return new SyncBroadcastResult(Attempted: 0, Succeeded: 0, Failed: 0);
         }
 
-        metrics.BackplaneMessageReceived();
         cancellationToken.ThrowIfCancellationRequested();
+        if (!IsValidRemotePayload(message.Payload))
+        {
+            metrics.BackplaneInvalidPayload();
+            return new SyncBroadcastResult(Attempted: 0, Succeeded: 0, Failed: 0);
+        }
+
+        metrics.BackplaneMessageReceived();
         return await broadcaster.BroadcastAsync(
             room,
             senderId: Guid.Empty,
             message.Payload,
             sendTimeout,
             logger);
+    }
+
+    private bool IsValidRemotePayload(string payload)
+    {
+        return !string.IsNullOrWhiteSpace(payload) &&
+               Encoding.UTF8.GetByteCount(payload) <= maxMessageBytes &&
+               (SyncPresenceMessage.TryParse(payload, out _) ||
+                SyncRelayMessage.IsValid(payload, maxMessageBytes));
     }
 
     public void Dispose()

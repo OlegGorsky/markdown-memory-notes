@@ -92,6 +92,7 @@ public sealed class SyncPresenceCoordinatorTests
             registry,
             broadcaster,
             backplane,
+            maxMessageBytes: 1024,
             TimeSpan.FromSeconds(1),
             metrics,
             NullLogger.Instance);

@@ -30,6 +30,7 @@ var backplaneBridge = new SyncBackplaneBridge<WebSocket>(
     rooms,
     broadcaster,
     backplane,
+    options.MaxMessageBytes,
     options.SendTimeout,
     metrics,
     app.Logger);
