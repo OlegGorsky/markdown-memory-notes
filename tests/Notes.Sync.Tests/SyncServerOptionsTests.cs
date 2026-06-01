@@ -16,6 +16,7 @@ public sealed class SyncServerOptionsTests
         Assert.InRange(options.MaxMessageBytes, 1, 1024 * 1024);
         Assert.InRange(options.MaxMessagesPerMinute, 1, 1_000);
         Assert.InRange(options.MaxFanoutConcurrency, 1, options.MaxPeersPerRoom);
+        Assert.InRange(options.MaxBackplaneReceiveQueue, 1, 100_000);
         Assert.InRange(options.MaxConnections, options.MaxPeersPerRoom, 100_000);
         Assert.InRange(options.MaxConnectionsPerClient, 1, options.MaxConnections);
         Assert.InRange(options.JoinTimeout, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(30));
@@ -163,17 +164,20 @@ public sealed class SyncServerOptionsTests
         var previousRedis = Environment.GetEnvironmentVariable("MMN_SYNC_BACKPLANE_REDIS");
         var previousPrefix = Environment.GetEnvironmentVariable("MMN_SYNC_BACKPLANE_CHANNEL_PREFIX");
         var previousInstance = Environment.GetEnvironmentVariable("MMN_SYNC_INSTANCE_ID");
+        var previousQueue = Environment.GetEnvironmentVariable("MMN_SYNC_BACKPLANE_RECEIVE_QUEUE");
         try
         {
             Environment.SetEnvironmentVariable("MMN_SYNC_BACKPLANE_REDIS", null);
             Environment.SetEnvironmentVariable("MMN_SYNC_BACKPLANE_CHANNEL_PREFIX", null);
             Environment.SetEnvironmentVariable("MMN_SYNC_INSTANCE_ID", null);
+            Environment.SetEnvironmentVariable("MMN_SYNC_BACKPLANE_RECEIVE_QUEUE", null);
             var configuration = new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["Sync:BackplaneRedis"] = "localhost:6379,abortConnect=false",
                     ["Sync:BackplaneChannelPrefix"] = "notes-prod",
-                    ["Sync:InstanceId"] = "relay-a"
+                    ["Sync:InstanceId"] = "relay-a",
+                    ["Sync:MaxBackplaneReceiveQueue"] = "2048"
                 })
                 .Build();
 
@@ -182,12 +186,14 @@ public sealed class SyncServerOptionsTests
             Assert.Equal("localhost:6379,abortConnect=false", options.BackplaneRedisConnectionString);
             Assert.Equal("notes-prod", options.BackplaneChannelPrefix);
             Assert.Equal("relay-a", options.InstanceId);
+            Assert.Equal(2048, options.MaxBackplaneReceiveQueue);
         }
         finally
         {
             Environment.SetEnvironmentVariable("MMN_SYNC_BACKPLANE_REDIS", previousRedis);
             Environment.SetEnvironmentVariable("MMN_SYNC_BACKPLANE_CHANNEL_PREFIX", previousPrefix);
             Environment.SetEnvironmentVariable("MMN_SYNC_INSTANCE_ID", previousInstance);
+            Environment.SetEnvironmentVariable("MMN_SYNC_BACKPLANE_RECEIVE_QUEUE", previousQueue);
         }
     }
 }

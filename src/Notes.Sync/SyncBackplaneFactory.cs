@@ -22,6 +22,7 @@ public static class SyncBackplaneFactory
             options.BackplaneRedisConnectionString,
             options.BackplaneChannelPrefix,
             options.InstanceId,
+            options.MaxBackplaneReceiveQueue,
             metrics,
             logger);
     }

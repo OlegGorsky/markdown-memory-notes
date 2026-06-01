@@ -57,4 +57,7 @@ public static partial class SyncLog
 
     [LoggerMessage(EventId = 18, Level = LogLevel.Warning, Message = "Sync peer cleanup failed. Room={Room}")]
     public static partial void PeerCleanupFailed(ILogger logger, Exception exception, string room);
+
+    [LoggerMessage(EventId = 19, Level = LogLevel.Debug, Message = "Sync backplane receive queue is full. Room={Room}")]
+    public static partial void BackplaneReceiveQueueFull(ILogger logger, string room);
 }

@@ -32,6 +32,7 @@ public sealed class SyncMetricsTests
         metrics.BackplaneMessageIgnored();
         metrics.BackplaneInvalidPayload();
         metrics.BackplaneReceiveFailed();
+        metrics.BackplaneReceiveDropped();
         metrics.BackplaneHealthCheckFailed();
         metrics.PresenceTrackerJoinFailed();
         metrics.PresenceTrackerLeaveFailed();
@@ -65,6 +66,7 @@ public sealed class SyncMetricsTests
         Assert.Equal(1, snapshot.BackplaneMessagesIgnored);
         Assert.Equal(1, snapshot.BackplaneInvalidPayload);
         Assert.Equal(1, snapshot.BackplaneReceiveFailed);
+        Assert.Equal(1, snapshot.BackplaneReceiveDropped);
         Assert.Equal(1, snapshot.BackplaneHealthCheckFailed);
         Assert.Equal(1, snapshot.PresenceTrackerJoinFailed);
         Assert.Equal(1, snapshot.PresenceTrackerLeaveFailed);
@@ -112,6 +114,7 @@ public sealed class SyncMetricsTests
         Assert.Contains("mmn_sync_backplane_publish_failed_total 0", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_backplane_remote_subscribers_total 3", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_backplane_subscribe_succeeded_total 1", text, StringComparison.Ordinal);
+        Assert.Contains("mmn_sync_backplane_receive_dropped_total 0", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_backplane_health_check_failed_total 0", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_presence_tracker_count_failed_total 0", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_presence_tracker_heartbeat_failed_total 0", text, StringComparison.Ordinal);

@@ -254,6 +254,7 @@ app.MapGet("/health", async (CancellationToken cancellationToken) =>
         options.MaxMessageBytes,
         options.MaxMessagesPerMinute,
         options.MaxFanoutConcurrency,
+        options.MaxBackplaneReceiveQueue,
         backplaneEnabled = backplane.IsEnabled,
         backplaneHealthy = backplaneHealth.Healthy,
         backplaneHealth,

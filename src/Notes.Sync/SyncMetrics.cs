@@ -26,6 +26,7 @@ public sealed class SyncMetrics
     private long backplaneMessagesIgnored;
     private long backplaneInvalidPayload;
     private long backplaneReceiveFailed;
+    private long backplaneReceiveDropped;
     private long backplaneHealthCheckFailed;
     private long presenceTrackerJoinFailed;
     private long presenceTrackerLeaveFailed;
@@ -147,6 +148,11 @@ public sealed class SyncMetrics
         Interlocked.Increment(ref backplaneReceiveFailed);
     }
 
+    public void BackplaneReceiveDropped()
+    {
+        Interlocked.Increment(ref backplaneReceiveDropped);
+    }
+
     public void BackplaneHealthCheckFailed()
     {
         Interlocked.Increment(ref backplaneHealthCheckFailed);
@@ -214,6 +220,7 @@ public sealed class SyncMetrics
             Interlocked.Read(ref backplaneMessagesIgnored),
             Interlocked.Read(ref backplaneInvalidPayload),
             Interlocked.Read(ref backplaneReceiveFailed),
+            Interlocked.Read(ref backplaneReceiveDropped),
             Interlocked.Read(ref backplaneHealthCheckFailed),
             Interlocked.Read(ref presenceTrackerJoinFailed),
             Interlocked.Read(ref presenceTrackerLeaveFailed),
@@ -263,6 +270,7 @@ public sealed class SyncMetrics
             mmn_sync_backplane_messages_ignored_total {snapshot.BackplaneMessagesIgnored}
             mmn_sync_backplane_invalid_payload_total {snapshot.BackplaneInvalidPayload}
             mmn_sync_backplane_receive_failed_total {snapshot.BackplaneReceiveFailed}
+            mmn_sync_backplane_receive_dropped_total {snapshot.BackplaneReceiveDropped}
             mmn_sync_backplane_health_check_failed_total {snapshot.BackplaneHealthCheckFailed}
             mmn_sync_presence_tracker_join_failed_total {snapshot.PresenceTrackerJoinFailed}
             mmn_sync_presence_tracker_leave_failed_total {snapshot.PresenceTrackerLeaveFailed}
@@ -299,6 +307,7 @@ public sealed record SyncMetricSnapshot(
     long BackplaneMessagesIgnored,
     long BackplaneInvalidPayload,
     long BackplaneReceiveFailed,
+    long BackplaneReceiveDropped,
     long BackplaneHealthCheckFailed,
     long PresenceTrackerJoinFailed,
     long PresenceTrackerLeaveFailed,

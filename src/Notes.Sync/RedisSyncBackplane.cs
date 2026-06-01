@@ -80,6 +80,7 @@ public sealed class RedisSyncBackplane : ISyncBackplane, ISyncPresenceTracker, I
     private readonly IDatabase database;
     private readonly string channelPrefix;
     private readonly string instanceId;
+    private readonly int maxReceiveQueue;
     private readonly ILogger logger;
     private readonly SyncMetrics metrics;
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<Guid, RedisValue>> presenceMembers = new(StringComparer.Ordinal);
@@ -90,6 +91,7 @@ public sealed class RedisSyncBackplane : ISyncBackplane, ISyncPresenceTracker, I
         ConnectionMultiplexer connection,
         string channelPrefix,
         string instanceId,
+        int maxReceiveQueue,
         SyncMetrics metrics,
         ILogger logger)
     {
@@ -98,6 +100,7 @@ public sealed class RedisSyncBackplane : ISyncBackplane, ISyncPresenceTracker, I
         this.database = connection.GetDatabase();
         this.channelPrefix = channelPrefix.Trim().TrimEnd(':');
         this.instanceId = instanceId;
+        this.maxReceiveQueue = maxReceiveQueue;
         this.metrics = metrics;
         this.logger = logger;
         this.presenceHeartbeatTask = RunPresenceHeartbeatAsync();
@@ -126,17 +129,19 @@ public sealed class RedisSyncBackplane : ISyncBackplane, ISyncPresenceTracker, I
         string connectionString,
         string channelPrefix,
         string instanceId,
+        int maxReceiveQueue,
         SyncMetrics metrics,
         ILogger logger)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
         ArgumentException.ThrowIfNullOrWhiteSpace(channelPrefix);
         ArgumentException.ThrowIfNullOrWhiteSpace(instanceId);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxReceiveQueue);
         ArgumentNullException.ThrowIfNull(metrics);
         ArgumentNullException.ThrowIfNull(logger);
 
         var connection = await ConnectionMultiplexer.ConnectAsync(connectionString);
-        return new RedisSyncBackplane(connection, channelPrefix, instanceId, metrics, logger);
+        return new RedisSyncBackplane(connection, channelPrefix, instanceId, maxReceiveQueue, metrics, logger);
     }
 
     public async Task<IDisposable> SubscribeAsync(
@@ -149,30 +154,34 @@ public sealed class RedisSyncBackplane : ISyncBackplane, ISyncPresenceTracker, I
         cancellationToken.ThrowIfCancellationRequested();
 
         var channel = RedisChannel.Literal(ChannelName(room));
-        await subscriber.SubscribeAsync(channel, async (_, value) =>
-        {
-            try
+        var subscription = new SyncBackplaneSubscription(
+            room,
+            maxReceiveQueue,
+            async (payload, token) =>
             {
-                var message = JsonSerializer.Deserialize<SyncBackplaneMessage>(value.ToString(), JsonOptions);
-                if (message is null)
+                var message = JsonSerializer.Deserialize<SyncBackplaneMessage>(payload, JsonOptions);
+                if (message is not null)
                 {
-                    return;
+                    await onMessage(message, token);
                 }
+            },
+            metrics,
+            logger);
 
-                await onMessage(message, CancellationToken.None);
-            }
-            catch (JsonException exception)
+        try
+        {
+            await subscriber.SubscribeAsync(channel, (_, value) =>
             {
-                metrics.BackplaneInvalidPayload();
-                SyncLog.BackplaneInvalidPayload(logger, exception, room);
-            }
-            catch (Exception exception) when (exception is not OperationCanceledException)
-            {
-                metrics.BackplaneReceiveFailed();
-                SyncLog.BackplaneReceiveFailed(logger, exception, room);
-            }
-        });
-        return new RedisSubscription(subscriber, channel);
+                subscription.TryEnqueue(value.ToString());
+            });
+        }
+        catch
+        {
+            subscription.Dispose();
+            throw;
+        }
+
+        return new RedisSubscription(subscriber, channel, subscription);
     }
 
     public async Task<SyncBackplanePublishResult> PublishAsync(
@@ -387,16 +396,28 @@ public sealed class RedisSyncBackplane : ISyncBackplane, ISyncPresenceTracker, I
     {
         private readonly ISubscriber subscriber;
         private readonly RedisChannel channel;
+        private readonly SyncBackplaneSubscription subscription;
 
-        public RedisSubscription(ISubscriber subscriber, RedisChannel channel)
+        public RedisSubscription(
+            ISubscriber subscriber,
+            RedisChannel channel,
+            SyncBackplaneSubscription subscription)
         {
             this.subscriber = subscriber;
             this.channel = channel;
+            this.subscription = subscription;
         }
 
         public void Dispose()
         {
-            subscriber.Unsubscribe(channel);
+            try
+            {
+                subscriber.Unsubscribe(channel);
+            }
+            finally
+            {
+                subscription.Dispose();
+            }
         }
     }
 }
