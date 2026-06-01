@@ -17,11 +17,14 @@ RUN dotnet publish src/Notes.Web/Notes.Web.csproj \
 
 FROM caddy:2-alpine
 
+ENV XDG_CONFIG_HOME=/config \
+	XDG_DATA_HOME=/data
+
 COPY deploy/note/Caddyfile.web /etc/caddy/Caddyfile
-COPY --from=build --chown=caddy:caddy /app/publish/wwwroot/ /srv/www/
+COPY --from=build --chown=65534:65534 /app/publish/wwwroot/ /srv/www/
 
 RUN mkdir -p /data /config \
-	&& chown -R caddy:caddy /data /config /srv/www
+	&& chown -R 65534:65534 /data /config /srv/www
 
-USER caddy
+USER 65534:65534
 EXPOSE 8080
