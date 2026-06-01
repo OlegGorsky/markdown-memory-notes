@@ -7,6 +7,34 @@ namespace Notes.Sync;
 
 public static class SyncRelayMessage
 {
+    public static bool IsHeartbeat(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind is not JsonValueKind.Object ||
+                HasDuplicateProtocolProperty(document.RootElement) ||
+                !TryGetSingleProperty(document.RootElement, "type", out var typeElement) ||
+                typeElement.ValueKind is not JsonValueKind.String ||
+                typeElement.GetString() != "heartbeat")
+            {
+                return false;
+            }
+
+            var propertyCount = 0;
+            foreach (var _ in document.RootElement.EnumerateObject())
+            {
+                propertyCount++;
+            }
+
+            return propertyCount == 1;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
     public static bool IsValid(string json, int maxContentBytes)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxContentBytes);

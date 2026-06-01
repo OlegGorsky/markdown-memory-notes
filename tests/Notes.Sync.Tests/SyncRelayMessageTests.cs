@@ -52,6 +52,23 @@ public sealed class SyncRelayMessageTests
         Assert.Equal("0123456789abcdef0123456789abcdef", messageId);
     }
 
+    [Fact]
+    public void IsHeartbeatAcceptsMinimalHeartbeat()
+    {
+        Assert.True(SyncRelayMessage.IsHeartbeat("""{"type":"heartbeat"}"""));
+    }
+
+    [Theory]
+    [InlineData("""{"type":"heartbeat","path":"notes/a.md"}""")]
+    [InlineData("""{"type":"heartbeat","content":"payload"}""")]
+    [InlineData("""{"type":"heartbeat","messageId":"0123456789abcdef0123456789abcdef"}""")]
+    [InlineData("""{"type":"heartbeat","Type":"file"}""")]
+    [InlineData("""{"type":"file","path":"notes/a.md","content":"# A"}""")]
+    public void IsHeartbeatRejectsPayloadAndDuplicateProtocolProperties(string json)
+    {
+        Assert.False(SyncRelayMessage.IsHeartbeat(json));
+    }
+
     [Theory]
     [InlineData("[]")]
     [InlineData("123")]

@@ -4,12 +4,15 @@ let connection = null;
 let reconnectTimer = null;
 let reconnectTimerClear = null;
 let reconnectAttempts = 0;
+let heartbeatTimer = null;
+let heartbeatTimerClear = null;
 
 const defaultReconnectOptions = {
     initialReconnectDelayMs: 500,
     maxReconnectDelayMs: 10000,
     reconnectJitterRatio: 0.2,
-    maxIncomingMessages: 256
+    maxIncomingMessages: 256,
+    heartbeatIntervalMs: 45000
 };
 
 export function getDefaultSyncUrl() {
@@ -64,6 +67,7 @@ function openSocket(state) {
         try {
             socket.send(JSON.stringify({ room: state.room }));
             reconnectAttempts = 0;
+            startHeartbeat(state, socket);
             notifyStatus(state, 'connected');
         } catch (e) {
             notifyStatus(state, `Connection error: ${e.message}`);
@@ -80,6 +84,7 @@ function openSocket(state) {
     socket.onclose = () => {
         if (ws === socket) {
             ws = null;
+            stopHeartbeatTimer();
         }
 
         if (connection !== state) return;
@@ -167,7 +172,41 @@ function stopReconnectTimer() {
     reconnectTimerClear = null;
 }
 
+function startHeartbeat(state, socket) {
+    stopHeartbeatTimer();
+    heartbeatTimerClear = state.options.clearInterval;
+    heartbeatTimer = state.options.setInterval(() => {
+        if (!isCurrentSocket(state, socket)) {
+            stopHeartbeatTimer();
+            return;
+        }
+
+        const openState = state.options.WebSocket.OPEN ?? 1;
+        if (socket.readyState !== openState) {
+            return;
+        }
+
+        try {
+            socket.send(JSON.stringify({ type: 'heartbeat' }));
+        } catch {
+            notifyStatus(state, 'error');
+            closeCurrentSocket();
+            scheduleReconnect(state);
+        }
+    }, state.options.heartbeatIntervalMs);
+}
+
+function stopHeartbeatTimer() {
+    if (heartbeatTimer && heartbeatTimerClear) {
+        heartbeatTimerClear(heartbeatTimer);
+    }
+
+    heartbeatTimer = null;
+    heartbeatTimerClear = null;
+}
+
 function closeCurrentSocket() {
+    stopHeartbeatTimer();
     const socket = ws;
     ws = null;
     if (!socket) return;
@@ -236,6 +275,8 @@ function normalizeOptions(options) {
         WebSocket: options.WebSocket ?? globalThis.WebSocket,
         setTimeout: options.setTimeout ?? ((callback, delay) => globalThis.setTimeout(callback, delay)),
         clearTimeout: options.clearTimeout ?? (timer => globalThis.clearTimeout(timer)),
+        setInterval: options.setInterval ?? ((callback, delay) => globalThis.setInterval(callback, delay)),
+        clearInterval: options.clearInterval ?? (timer => globalThis.clearInterval(timer)),
         random: options.random ?? Math.random,
         initialReconnectDelayMs: positiveNumberOrDefault(
             options.initialReconnectDelayMs,
@@ -248,7 +289,10 @@ function normalizeOptions(options) {
             defaultReconnectOptions.reconnectJitterRatio),
         maxIncomingMessages: positiveIntegerOrDefault(
             options.maxIncomingMessages,
-            defaultReconnectOptions.maxIncomingMessages)
+            defaultReconnectOptions.maxIncomingMessages),
+        heartbeatIntervalMs: positiveNumberOrDefault(
+            options.heartbeatIntervalMs,
+            defaultReconnectOptions.heartbeatIntervalMs)
     };
 }
 

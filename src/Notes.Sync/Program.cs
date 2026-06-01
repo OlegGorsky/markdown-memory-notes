@@ -161,6 +161,11 @@ async Task HandleSyncRequestAsync(HttpContext context)
                 break;
             }
 
+            if (SyncRelayMessage.IsHeartbeat(message))
+            {
+                continue;
+            }
+
             if (!SyncRelayMessage.IsValid(message, options.MaxMessageBytes))
             {
                 metrics.MessageRejected();

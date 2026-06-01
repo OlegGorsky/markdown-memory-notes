@@ -10,6 +10,7 @@ async function loadSyncClient() {
 
 function createHarness() {
   const timers = [];
+  const intervals = [];
   const pendingInvocations = [];
 
   class FakeWebSocket {
@@ -93,6 +94,14 @@ function createHarness() {
     clearTimeout(timer) {
       timer.cleared = true;
     },
+    setInterval(callback, delay) {
+      const interval = { callback, delay, cleared: false };
+      intervals.push(interval);
+      return interval;
+    },
+    clearInterval(interval) {
+      interval.cleared = true;
+    },
     random: () => 0.5,
     initialReconnectDelayMs: 100,
     maxReconnectDelayMs: 500
@@ -113,6 +122,15 @@ function createHarness() {
     },
     activeTimers() {
       return timers.filter(timer => !timer.cleared);
+    },
+    runNextInterval() {
+      const interval = intervals.find(candidate => !candidate.cleared);
+      assert.ok(interval, 'expected a scheduled heartbeat interval');
+      interval.callback();
+      return interval;
+    },
+    activeIntervals() {
+      return intervals.filter(interval => !interval.cleared);
     }
   };
 }
@@ -277,6 +295,56 @@ async function testStatusCallbackFailuresDoNotCreateUnhandledRejections() {
   assert.equal(unhandled, false);
 }
 
+async function testHeartbeatRunsWhileSocketIsOpen() {
+  const syncClient = await loadSyncClient();
+  const harness = createHarness();
+  harness.options.heartbeatIntervalMs = 1000;
+
+  syncClient.connect('ws://localhost/sync', 'AbCdEfGhIjKlMnOpQrStUv',
+    harness.dotNetRef, 'OnMessage', 'OnStatus', harness.options);
+  harness.FakeWebSocket.instances[0].open();
+
+  assert.equal(harness.activeIntervals().length, 1);
+  assert.equal(harness.activeIntervals()[0].delay, 1000);
+
+  harness.runNextInterval();
+
+  assert.deepEqual(JSON.parse(harness.FakeWebSocket.instances[0].sent.at(-1)), { type: 'heartbeat' });
+}
+
+async function testHeartbeatStopsOnDisconnect() {
+  const syncClient = await loadSyncClient();
+  const harness = createHarness();
+
+  syncClient.connect('ws://localhost/sync', 'AbCdEfGhIjKlMnOpQrStUv',
+    harness.dotNetRef, 'OnMessage', 'OnStatus', harness.options);
+  harness.FakeWebSocket.instances[0].open();
+  assert.equal(harness.activeIntervals().length, 1);
+
+  syncClient.disconnect();
+
+  assert.equal(harness.activeIntervals().length, 0);
+}
+
+async function testHeartbeatStopsAfterUnexpectedCloseAndRestartsOnReconnect() {
+  const syncClient = await loadSyncClient();
+  const harness = createHarness();
+
+  syncClient.connect('ws://localhost/sync', 'AbCdEfGhIjKlMnOpQrStUv',
+    harness.dotNetRef, 'OnMessage', 'OnStatus', harness.options);
+  harness.FakeWebSocket.instances[0].open();
+  assert.equal(harness.activeIntervals().length, 1);
+
+  harness.FakeWebSocket.instances[0].serverClose();
+
+  assert.equal(harness.activeIntervals().length, 0);
+
+  harness.runNextTimer();
+  harness.FakeWebSocket.instances[1].open();
+
+  assert.equal(harness.activeIntervals().length, 1);
+}
+
 function nextTurn() {
   return new Promise(resolve => setImmediate(resolve));
 }
@@ -307,7 +375,10 @@ const tests = [
   testIncomingMessagesAreDeliveredSequentially,
   testIncomingMessageFailureReportsErrorAndContinues,
   testIncomingQueueOverflowReconnectsInsteadOfGrowingUnbounded,
-  testStatusCallbackFailuresDoNotCreateUnhandledRejections
+  testStatusCallbackFailuresDoNotCreateUnhandledRejections,
+  testHeartbeatRunsWhileSocketIsOpen,
+  testHeartbeatStopsOnDisconnect,
+  testHeartbeatStopsAfterUnexpectedCloseAndRestartsOnReconnect
 ];
 
 for (const test of tests) {

@@ -20,7 +20,7 @@ public sealed class SyncServerOptionsTests
         Assert.InRange(options.MaxConnections, options.MaxPeersPerRoom, 100_000);
         Assert.InRange(options.MaxConnectionsPerClient, 1, options.MaxConnections);
         Assert.InRange(options.JoinTimeout, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(30));
-        Assert.InRange(options.ReceiveTimeout, TimeSpan.FromSeconds(1), TimeSpan.FromMinutes(1));
+        Assert.InRange(options.ReceiveTimeout, TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(3));
         Assert.Empty(options.AllowedOrigins);
         Assert.Empty(options.TrustedProxies);
         Assert.Empty(options.TrustedNetworks);
