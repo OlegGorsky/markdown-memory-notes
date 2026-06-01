@@ -45,6 +45,7 @@ MMN_SYNC_ALLOWED_ORIGINS=https://app.example.com \
 MMN_SYNC_MAX_CONNECTIONS=20000 \
 MMN_SYNC_MAX_CONNECTIONS_PER_CLIENT=256 \
 MMN_SYNC_JOIN_TIMEOUT_SECONDS=10 \
+MMN_SYNC_BACKPLANE_RECEIVE_QUEUE=1024 \
 MMN_SYNC_TRUSTED_PROXIES=127.0.0.1 \
 MMN_SYNC_TRUSTED_NETWORKS=10.0.0.0/8 \
 nix develop --command dotnet run --project src/Notes.Sync/Notes.Sync.csproj
@@ -56,6 +57,8 @@ nix develop --command dotnet run --project src/Notes.Sync/Notes.Sync.csproj
 `MMN_SYNC_TRUSTED_PROXIES` and `MMN_SYNC_TRUSTED_NETWORKS` enable `X-Forwarded-For` handling only for explicitly trusted reverse proxies; leave them empty when the relay is directly internet-facing.
 `MMN_SYNC_BACKPLANE_REDIS` enables the optional Redis backplane for multi-instance relay deployments. Without it, each relay process only delivers messages and presence to peers connected to the same process, so a load-balanced deployment needs sticky routing for each sync room. With Redis enabled, relay instances can publish sync messages, distributed presence updates, and global room/peer admission decisions across processes behind a load balancer.
 `MMN_SYNC_BACKPLANE_CHANNEL_PREFIX` isolates relay channels when several environments share Redis. `MMN_SYNC_INSTANCE_ID` should be unique per relay process; it is used to ignore messages published by the same instance.
+`MMN_SYNC_BACKPLANE_RECEIVE_QUEUE` bounds queued Redis backplane messages per subscribed room before the relay starts dropping new remote payloads and increments `mmn_sync_backplane_receive_dropped_total`. Raise it for rooms with high fan-out bursts, and alert on drops because clients may need to reconnect or resync.
+`MMN_SYNC_SEND_TIMEOUT_SECONDS` bounds direct peer sends, backplane publish/subscribe waits, and distributed admission/presence tracker operations. Keep it short enough that slow Redis or peers cannot hold relay cleanup paths indefinitely.
 Connection limits stay per relay process and per observed client address. Room and peer limits are enforced locally without Redis, and globally with Redis enabled. Distributed admission uses expiring Redis room membership plus heartbeat renewal, so crashed relay processes age out of peer counts and capacity checks.
 
 For a multi-instance relay deployment, add Redis backplane settings per relay process:
@@ -66,7 +69,7 @@ MMN_SYNC_BACKPLANE_CHANNEL_PREFIX=mmn:sync:prod \
 MMN_SYNC_INSTANCE_ID=relay-a
 ```
 
-The relay exposes `/health` and Prometheus text metrics at `/metrics`. `/health` includes `backplaneHealth`; when Redis is configured but unreachable the response body reports `status: "degraded"` and `backplaneHealthy: false`. Watch `mmn_sync_active_backplane_subscriptions`, `mmn_sync_active_send_gates`, `mmn_sync_active_backplane_receive_gates`, `mmn_sync_peer_cleanup_failed_total`, `mmn_sync_backplane_publish_failed_total`, `mmn_sync_backplane_subscribe_failed_total`, `mmn_sync_backplane_invalid_payload_total`, `mmn_sync_backplane_receive_failed_total`, `mmn_sync_backplane_health_check_failed_total`, `mmn_sync_presence_tracker_count_failed_total`, `mmn_sync_presence_tracker_heartbeat_failed_total`, and `mmn_sync_admission_controller_failed_total` for Redis/backplane degradation or connection churn issues. `mmn_sync_admission_rejected_room_full_total` and `mmn_sync_admission_rejected_room_limit_total` show global capacity rejections. `mmn_sync_backplane_remote_subscribers_total` should move when messages are delivered across relay instances.
+The relay exposes `/health` and Prometheus text metrics at `/metrics`. `/health` includes `backplaneHealth`; when Redis is configured but unreachable the response body reports `status: "degraded"` and `backplaneHealthy: false`. Watch `mmn_sync_active_backplane_subscriptions`, `mmn_sync_active_send_gates`, `mmn_sync_active_backplane_receive_gates`, `mmn_sync_peer_cleanup_failed_total`, `mmn_sync_backplane_publish_failed_total`, `mmn_sync_backplane_subscribe_failed_total`, `mmn_sync_backplane_invalid_payload_total`, `mmn_sync_backplane_receive_failed_total`, `mmn_sync_backplane_receive_dropped_total`, `mmn_sync_backplane_health_check_failed_total`, `mmn_sync_presence_tracker_count_failed_total`, `mmn_sync_presence_tracker_heartbeat_failed_total`, and `mmn_sync_admission_controller_failed_total` for Redis/backplane degradation or connection churn issues. `mmn_sync_admission_rejected_room_full_total` and `mmn_sync_admission_rejected_room_limit_total` show global capacity rejections. `mmn_sync_backplane_remote_subscribers_total` should move when messages are delivered across relay instances.
 
 ## Projects
 
