@@ -9,6 +9,7 @@ public sealed class SyncBackplaneBridgeTests
 {
     private const string Room = "RoomBackplane-ABCDEFGH";
     private const string RelayPayload = """{"type":"file","path":"notes/a.md","content":"# A"}""";
+    private const string DeletePayload = """{"type":"delete","path":"notes/a.md"}""";
 
     [Fact]
     public async Task ReceiveAsyncBroadcastsRemoteBackplaneMessagesToLocalPeers()
@@ -85,6 +86,55 @@ public sealed class SyncBackplaneBridgeTests
         Assert.Empty(peer.Messages);
         Assert.Equal(0, result.Attempted);
         Assert.Equal(1, metrics.Snapshot().BackplaneInvalidPayload);
+    }
+
+    [Fact]
+    public async Task ReceiveAsyncSerializesRemoteBroadcastsForSameRoom()
+    {
+        var registry = new SyncRoomRegistry<TestPeer>(maxRooms: 1, maxPeersPerRoom: 4);
+        var slowPeer = new TestPeer();
+        var fastPeer = new TestPeer();
+        registry.TryJoin(Room, Guid.NewGuid(), slowPeer);
+        registry.TryJoin(Room, Guid.NewGuid(), fastPeer);
+        var firstSlowSendEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirstSlowSend = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondPayloadSendStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var bridge = CreateBridge(
+            "instance-a",
+            registry,
+            sendAsync: async (peer, payload, cancellationToken) =>
+            {
+                if (payload == RelayPayload && ReferenceEquals(peer, slowPeer))
+                {
+                    firstSlowSendEntered.SetResult();
+                    await releaseFirstSlowSend.Task.WaitAsync(TimeSpan.FromSeconds(1), cancellationToken);
+                }
+                else if (payload == DeletePayload)
+                {
+                    secondPayloadSendStarted.TrySetResult();
+                }
+
+                peer.Messages.Add(payload);
+            });
+
+        var firstReceive = bridge.ReceiveAsync(
+            Room,
+            new SyncBackplaneMessage("instance-b", Guid.NewGuid(), RelayPayload),
+            CancellationToken.None);
+        await firstSlowSendEntered.Task.WaitAsync(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+        var secondReceive = bridge.ReceiveAsync(
+            Room,
+            new SyncBackplaneMessage("instance-b", Guid.NewGuid(), DeletePayload),
+            CancellationToken.None);
+        var secondStartedBeforeFirstCompleted = await Task.WhenAny(
+            secondPayloadSendStarted.Task,
+            Task.Delay(100, TestContext.Current.CancellationToken)) == secondPayloadSendStarted.Task;
+        releaseFirstSlowSend.SetResult();
+
+        await Task.WhenAll(firstReceive, secondReceive);
+
+        Assert.False(secondStartedBeforeFirstCompleted);
+        Assert.Equal(0, bridge.ReceiveGateCount);
     }
 
     [Fact]
@@ -190,17 +240,19 @@ public sealed class SyncBackplaneBridgeTests
         string instanceId,
         SyncRoomRegistry<TestPeer> registry,
         ISyncBackplane? backplane = null,
-        SyncMetrics? metrics = null)
+        SyncMetrics? metrics = null,
+        Func<TestPeer, string, CancellationToken, Task>? sendAsync = null)
     {
         metrics ??= new SyncMetrics();
+        sendAsync ??= static (peer, payload, _) =>
+        {
+            peer.Messages.Add(payload);
+            return Task.CompletedTask;
+        };
         var broadcaster = new SyncBroadcaster<TestPeer>(
             registry,
             static peer => peer.IsOpen,
-            static (peer, payload, _) =>
-            {
-                peer.Messages.Add(payload);
-                return Task.CompletedTask;
-            },
+            sendAsync,
             maxFanoutConcurrency: 4,
             metrics);
 

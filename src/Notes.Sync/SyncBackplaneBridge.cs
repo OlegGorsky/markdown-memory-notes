@@ -15,6 +15,8 @@ public sealed class SyncBackplaneBridge<TConnection> : IDisposable
     private readonly TimeSpan sendTimeout;
     private readonly SyncMetrics metrics;
     private readonly ILogger logger;
+    private readonly Lock receiveGateLock = new();
+    private readonly Dictionary<string, ReceiveGate> receiveGates = new(StringComparer.Ordinal);
     private readonly Dictionary<string, IDisposable> subscriptions = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim subscriptionGate = new(1, 1);
     private int subscriptionCount;
@@ -49,6 +51,17 @@ public sealed class SyncBackplaneBridge<TConnection> : IDisposable
     }
 
     public int SubscriptionCount => Volatile.Read(ref subscriptionCount);
+
+    public int ReceiveGateCount
+    {
+        get
+        {
+            lock (receiveGateLock)
+            {
+                return receiveGates.Count;
+            }
+        }
+    }
 
     public async Task<SyncBackplanePublishResult> PublishAsync(
         string room,
@@ -181,12 +194,23 @@ public sealed class SyncBackplaneBridge<TConnection> : IDisposable
         }
 
         metrics.BackplaneMessageReceived();
-        return await broadcaster.BroadcastAsync(
-            room,
-            senderId: Guid.Empty,
-            message.Payload,
-            sendTimeout,
-            logger);
+        var receiveGate = GetReferencedReceiveGate(room);
+        try
+        {
+            using (await receiveGate.AcquireAsync(cancellationToken))
+            {
+                return await broadcaster.BroadcastAsync(
+                    room,
+                    senderId: Guid.Empty,
+                    message.Payload,
+                    sendTimeout,
+                    logger);
+            }
+        }
+        finally
+        {
+            ReleaseReceiveGateReference(room, receiveGate);
+        }
     }
 
     private bool IsValidRemotePayload(string payload)
@@ -195,6 +219,36 @@ public sealed class SyncBackplaneBridge<TConnection> : IDisposable
                Encoding.UTF8.GetByteCount(payload) <= maxMessageBytes &&
                (SyncPresenceMessage.TryParse(payload, out _) ||
                 SyncRelayMessage.IsValid(payload, maxMessageBytes));
+    }
+
+    private ReceiveGate GetReferencedReceiveGate(string room)
+    {
+        lock (receiveGateLock)
+        {
+            if (!receiveGates.TryGetValue(room, out var receiveGate))
+            {
+                receiveGate = new ReceiveGate();
+                receiveGates[room] = receiveGate;
+            }
+
+            receiveGate.AddReference();
+            return receiveGate;
+        }
+    }
+
+    private void ReleaseReceiveGateReference(string room, ReceiveGate receiveGate)
+    {
+        lock (receiveGateLock)
+        {
+            receiveGate.ReleaseReference();
+            if (receiveGate.CanRemove &&
+                receiveGates.TryGetValue(room, out var current) &&
+                ReferenceEquals(current, receiveGate))
+            {
+                receiveGates.Remove(room);
+                receiveGate.Dispose();
+            }
+        }
     }
 
     public void Dispose()
@@ -214,6 +268,55 @@ public sealed class SyncBackplaneBridge<TConnection> : IDisposable
         {
             subscriptionGate.Release();
             subscriptionGate.Dispose();
+        }
+    }
+
+    private sealed class ReceiveGate : IDisposable
+    {
+        private readonly SemaphoreSlim semaphore = new(1, 1);
+        private int references;
+
+        public bool CanRemove => Volatile.Read(ref references) == 0;
+
+        public void AddReference()
+        {
+            Interlocked.Increment(ref references);
+        }
+
+        public async Task<Lease> AcquireAsync(CancellationToken cancellationToken)
+        {
+            await semaphore.WaitAsync(cancellationToken);
+            return new Lease(this);
+        }
+
+        public void ReleaseReference()
+        {
+            Interlocked.Decrement(ref references);
+        }
+
+        public void Dispose()
+        {
+            semaphore.Dispose();
+        }
+
+        private void Release()
+        {
+            semaphore.Release();
+        }
+
+        public readonly struct Lease : IDisposable
+        {
+            private readonly ReceiveGate? gate;
+
+            public Lease(ReceiveGate gate)
+            {
+                this.gate = gate;
+            }
+
+            public void Dispose()
+            {
+                gate?.Release();
+            }
         }
     }
 }

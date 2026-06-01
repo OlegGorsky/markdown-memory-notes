@@ -91,13 +91,15 @@ public sealed class SyncMetricsTests
             new SyncRoomStats(Rooms: 3, Connections: 7),
             activeWebSockets: 11,
             activeBackplaneSubscriptions: 5,
-            activeSendGates: 2);
+            activeSendGates: 2,
+            activeBackplaneReceiveGates: 4);
 
         Assert.Contains("mmn_sync_rooms 3", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_connections 7", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_active_websockets 11", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_active_backplane_subscriptions 5", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_active_send_gates 2", text, StringComparison.Ordinal);
+        Assert.Contains("mmn_sync_active_backplane_receive_gates 4", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_messages_received_total 1", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_connection_limit_rejected_total 0", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_join_timed_out_total 0", text, StringComparison.Ordinal);

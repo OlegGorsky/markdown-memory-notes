@@ -260,6 +260,7 @@ app.MapGet("/health", async (CancellationToken cancellationToken) =>
         distributedPresenceEnabled = presenceCoordinator.IsDistributed,
         distributedAdmissionEnabled = admissionCoordinator.IsDistributed,
         activeBackplaneSubscriptions = backplaneBridge.SubscriptionCount,
+        activeBackplaneReceiveGates = backplaneBridge.ReceiveGateCount,
         options.BackplaneChannelPrefix,
         options.InstanceId,
         joinTimeoutSeconds = options.JoinTimeout.TotalSeconds,
@@ -276,7 +277,8 @@ app.MapGet("/metrics", () =>
             rooms.Stats,
             connections.ActiveConnections,
             backplaneBridge.SubscriptionCount,
-            broadcaster.SendGateCount),
+            broadcaster.SendGateCount,
+            backplaneBridge.ReceiveGateCount),
         "text/plain; version=0.0.4");
 });
 
