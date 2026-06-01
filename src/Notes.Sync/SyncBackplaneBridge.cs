@@ -156,6 +156,23 @@ public sealed class SyncBackplaneBridge<TConnection> : IDisposable
         }
     }
 
+    public async Task EnsureActiveSubscriptionsAsync(CancellationToken cancellationToken)
+    {
+        if (!backplane.IsEnabled)
+        {
+            return;
+        }
+
+        foreach (var room in rooms.GetRooms())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (rooms.GetPeers(room).Count > 0)
+            {
+                await EnsureSubscribedAsync(room, cancellationToken);
+            }
+        }
+    }
+
     private static void DisposeSubscriptionWhenCompleted(
         Task<IDisposable>? subscriptionTask,
         string room,

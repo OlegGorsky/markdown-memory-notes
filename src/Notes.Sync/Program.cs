@@ -39,6 +39,11 @@ var backplaneBridge = new SyncBackplaneBridge<WebSocket>(
     options.SendTimeout,
     metrics,
     app.Logger);
+if (backplane is ISyncBackplaneRecoveryNotifier recoveryNotifier)
+{
+    recoveryNotifier.SetRecoveredHandler(backplaneBridge.EnsureActiveSubscriptionsAsync);
+}
+
 using var presenceCoordinator = new SyncPresenceCoordinator<WebSocket>(
     rooms,
     broadcaster,

@@ -292,6 +292,85 @@ public sealed class SyncBackplaneBridgeTests
         Assert.Equal(0, bridge.SubscriptionCount);
     }
 
+    [Fact]
+    public async Task EnsureActiveSubscriptionsAsyncSubscribesExistingRoomsAfterBackplaneRecovery()
+    {
+        var now = new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero);
+        var attempts = 0;
+        var registry = new SyncRoomRegistry<TestPeer>(maxRooms: 1, maxPeersPerRoom: 4);
+        registry.TryJoin(Room, Guid.NewGuid(), new TestPeer());
+        await using var recovered = new FakeSyncBackplane();
+        await using var backplane = new RecoveringSyncBackplane(
+            connectionString: "redis.internal:6379",
+            channelPrefix: "mmn:sync:test",
+            instanceId: "instance-a",
+            maxReceiveQueue: 128,
+            metrics: new SyncMetrics(),
+            logger: NullLogger.Instance,
+            connectRedisAsync: (_, _, _, _, _, _) =>
+            {
+                attempts++;
+                if (attempts == 1)
+                {
+                    throw new TimeoutException("Redis unavailable.");
+                }
+
+                return Task.FromResult<ISyncBackplane>(recovered);
+            },
+            reconnectDelay: TimeSpan.FromSeconds(1),
+            now: () => now);
+        using var bridge = CreateBridge("instance-a", registry, backplane);
+
+        await bridge.EnsureSubscribedAsync(Room, CancellationToken.None);
+        Assert.Equal(0, bridge.SubscriptionCount);
+
+        now = now.AddSeconds(2);
+        await bridge.EnsureActiveSubscriptionsAsync(CancellationToken.None);
+
+        Assert.Equal(2, attempts);
+        Assert.Equal(1, recovered.SubscribeCount);
+        Assert.Equal(1, bridge.SubscriptionCount);
+    }
+
+    [Fact]
+    public async Task BackplaneRecoveryReconcilesExistingRoomSubscriptions()
+    {
+        var now = new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero);
+        var attempts = 0;
+        var registry = new SyncRoomRegistry<TestPeer>(maxRooms: 1, maxPeersPerRoom: 4);
+        registry.TryJoin(Room, Guid.NewGuid(), new TestPeer());
+        await using var recovered = new FakeSyncBackplane();
+        await using var backplane = new RecoveringSyncBackplane(
+            connectionString: "redis.internal:6379",
+            channelPrefix: "mmn:sync:test",
+            instanceId: "instance-a",
+            maxReceiveQueue: 128,
+            metrics: new SyncMetrics(),
+            logger: NullLogger.Instance,
+            connectRedisAsync: (_, _, _, _, _, _) =>
+            {
+                attempts++;
+                if (attempts == 1)
+                {
+                    throw new TimeoutException("Redis unavailable.");
+                }
+
+                return Task.FromResult<ISyncBackplane>(recovered);
+            },
+            reconnectDelay: TimeSpan.FromSeconds(1),
+            now: () => now);
+        using var bridge = CreateBridge("instance-a", registry, backplane);
+        backplane.SetRecoveredHandler(bridge.EnsureActiveSubscriptionsAsync);
+
+        await bridge.EnsureSubscribedAsync(Room, CancellationToken.None);
+        now = now.AddSeconds(2);
+        await backplane.CheckHealthAsync(CancellationToken.None);
+
+        Assert.Equal(2, attempts);
+        Assert.Equal(1, recovered.SubscribeCount);
+        Assert.Equal(1, bridge.SubscriptionCount);
+    }
+
     private static SyncBackplaneBridge<TestPeer> CreateBridge(
         string instanceId,
         SyncRoomRegistry<TestPeer> registry,

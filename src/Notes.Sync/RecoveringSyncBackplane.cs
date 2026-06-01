@@ -5,7 +5,8 @@ namespace Notes.Sync;
 public sealed class RecoveringSyncBackplane :
     ISyncBackplane,
     ISyncPresenceTracker,
-    ISyncAdmissionController
+    ISyncAdmissionController,
+    ISyncBackplaneRecoveryNotifier
 {
     private readonly string connectionString;
     private readonly string channelPrefix;
@@ -21,6 +22,7 @@ public sealed class RecoveringSyncBackplane :
     private ISyncBackplane? current;
     private ISyncPresenceTracker? currentPresenceTracker;
     private ISyncAdmissionController? currentAdmissionController;
+    private Func<CancellationToken, Task>? recoveredHandler;
     private DateTimeOffset nextReconnectAt;
     private int disposed;
 
@@ -70,6 +72,15 @@ public sealed class RecoveringSyncBackplane :
                 return currentAdmissionController?.IsDistributed == true ||
                        currentPresenceTracker?.IsDistributed == true;
             }
+        }
+    }
+
+    public void SetRecoveredHandler(Func<CancellationToken, Task> handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        lock (stateGate)
+        {
+            recoveredHandler = handler;
         }
     }
 
@@ -200,6 +211,8 @@ public sealed class RecoveringSyncBackplane :
     private async Task<ISyncBackplane?> GetCurrentOrReconnectAsync(CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
+        ISyncBackplane? connected = null;
+        Func<CancellationToken, Task>? handler = null;
 
         lock (stateGate)
         {
@@ -233,7 +246,7 @@ public sealed class RecoveringSyncBackplane :
 
             try
             {
-                var connected = await connectRedisAsync(
+                connected = await connectRedisAsync(
                     connectionString,
                     channelPrefix,
                     instanceId,
@@ -245,9 +258,8 @@ public sealed class RecoveringSyncBackplane :
                     current = connected;
                     currentPresenceTracker = connected as ISyncPresenceTracker;
                     currentAdmissionController = connected as ISyncAdmissionController;
+                    handler = recoveredHandler;
                 }
-
-                return connected;
             }
             catch (Exception exception) when (IsConnectionFailure(exception))
             {
@@ -259,6 +271,13 @@ public sealed class RecoveringSyncBackplane :
         {
             reconnectGate.Release();
         }
+
+        if (connected is not null && handler is not null)
+        {
+            await handler(cancellationToken);
+        }
+
+        return connected;
     }
 
     private void RecordConnectionFailure(Exception exception)

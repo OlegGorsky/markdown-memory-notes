@@ -62,6 +62,7 @@ nix develop --command dotnet run --project src/Notes.Sync/Notes.Sync.csproj
 `MMN_SYNC_BACKPLANE_CHANNEL_PREFIX` isolates relay channels when several environments share Redis. `MMN_SYNC_INSTANCE_ID` should be unique per relay process; it is used to ignore messages published by the same instance.
 `MMN_SYNC_BACKPLANE_RECEIVE_QUEUE` bounds queued Redis backplane messages per subscribed room before the relay starts dropping new remote payloads and increments `mmn_sync_backplane_receive_dropped_total`. Raise it for rooms with high fan-out bursts, and alert on drops because clients may need to reconnect or resync.
 `MMN_SYNC_SEND_TIMEOUT_SECONDS` bounds direct peer sends, backplane publish/subscribe waits, and distributed admission/presence tracker operations. Keep it short enough that slow Redis or peers cannot hold relay cleanup paths indefinitely.
+If Redis is unavailable during relay startup, the process starts in degraded mode, reports unhealthy backplane status, and retries Redis recovery with bounded backoff. When recovery succeeds, active local rooms are resubscribed to the backplane without waiting for a new peer join.
 Connection limits stay per relay process and per observed client address. Room and peer limits are enforced locally without Redis, and globally with Redis enabled. Distributed admission uses expiring Redis room membership plus heartbeat renewal, so crashed relay processes age out of peer counts and capacity checks.
 
 For a multi-instance relay deployment, add Redis backplane settings per relay process:
