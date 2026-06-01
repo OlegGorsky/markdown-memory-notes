@@ -13,6 +13,7 @@ public sealed class SyncAdmissionCoordinator<TConnection>
     private readonly TimeSpan operationTimeout;
     private readonly SyncMetrics metrics;
     private readonly ILogger logger;
+    private readonly int maxReconcileConcurrency;
     private readonly ConcurrentDictionary<Guid, string> distributedAdmissions = new();
 
     public SyncAdmissionCoordinator(
@@ -22,7 +23,8 @@ public sealed class SyncAdmissionCoordinator<TConnection>
         int maxPeersPerRoom,
         TimeSpan operationTimeout,
         SyncMetrics metrics,
-        ILogger logger)
+        ILogger logger,
+        int maxReconcileConcurrency = 4)
     {
         ArgumentNullException.ThrowIfNull(rooms);
         ArgumentNullException.ThrowIfNull(admissionController);
@@ -31,6 +33,7 @@ public sealed class SyncAdmissionCoordinator<TConnection>
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(operationTimeout, TimeSpan.Zero);
         ArgumentNullException.ThrowIfNull(metrics);
         ArgumentNullException.ThrowIfNull(logger);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxReconcileConcurrency);
 
         this.rooms = rooms;
         this.admissionController = admissionController;
@@ -39,6 +42,7 @@ public sealed class SyncAdmissionCoordinator<TConnection>
         this.operationTimeout = operationTimeout;
         this.metrics = metrics;
         this.logger = logger;
+        this.maxReconcileConcurrency = maxReconcileConcurrency;
     }
 
     public bool IsDistributed => admissionController.IsDistributed;
@@ -96,6 +100,36 @@ public sealed class SyncAdmissionCoordinator<TConnection>
         }
     }
 
+    public async Task ReconcileActiveAdmissionsAsync(CancellationToken cancellationToken)
+    {
+        if (!admissionController.IsDistributed)
+        {
+            return;
+        }
+
+        var candidates = rooms.GetRooms()
+            .SelectMany(room => rooms.GetPeers(room)
+                .Select(peer => (Room: room, ConnectionId: peer.Key)))
+            .Where(candidate => !distributedAdmissions.ContainsKey(candidate.ConnectionId))
+            .ToArray();
+        if (candidates.Length == 0)
+        {
+            return;
+        }
+
+        await Parallel.ForEachAsync(
+            candidates,
+            new ParallelOptions
+            {
+                CancellationToken = cancellationToken,
+                MaxDegreeOfParallelism = maxReconcileConcurrency
+            },
+            async (candidate, token) => await ReconcileAdmissionAsync(
+                candidate.Room,
+                candidate.ConnectionId,
+                token));
+    }
+
     public async Task PeerLeftAsync(string room, Guid connectionId, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(room);
@@ -107,6 +141,77 @@ public sealed class SyncAdmissionCoordinator<TConnection>
             return;
         }
 
+        try
+        {
+            using var timeout = CreateOperationTimeout(cancellationToken);
+            await admissionController.PeerLeftAsync(admittedRoom, connectionId, timeout.Token)
+                .WaitAsync(timeout.Token);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException ||
+                                          !cancellationToken.IsCancellationRequested)
+        {
+            metrics.AdmissionControllerFailed();
+            SyncLog.AdmissionControllerLeaveFailed(logger, exception, admittedRoom);
+        }
+    }
+
+    private async ValueTask ReconcileAdmissionAsync(
+        string room,
+        Guid connectionId,
+        CancellationToken cancellationToken)
+    {
+        if (distributedAdmissions.ContainsKey(connectionId) ||
+            !rooms.Contains(room, connectionId))
+        {
+            return;
+        }
+
+        SyncJoinResult distributedResult;
+        try
+        {
+            using var timeout = CreateOperationTimeout(cancellationToken);
+            distributedResult = await admissionController.TryJoinAsync(
+                room,
+                connectionId,
+                maxRooms,
+                maxPeersPerRoom,
+                timeout.Token).WaitAsync(timeout.Token);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException ||
+                                          !cancellationToken.IsCancellationRequested)
+        {
+            metrics.AdmissionControllerFailed();
+            SyncLog.AdmissionControllerJoinFailed(logger, exception, room);
+            return;
+        }
+
+        if (distributedResult is not SyncJoinResult.Joined)
+        {
+            metrics.AdmissionRejected(distributedResult);
+            return;
+        }
+
+        if (!distributedAdmissions.TryAdd(connectionId, room))
+        {
+            return;
+        }
+
+        if (!rooms.Contains(room, connectionId) &&
+            distributedAdmissions.TryRemove(connectionId, out var admittedRoom))
+        {
+            await ReleaseDistributedAdmissionAsync(admittedRoom, connectionId, cancellationToken);
+        }
+    }
+
+    private async Task ReleaseDistributedAdmissionAsync(
+        string admittedRoom,
+        Guid connectionId,
+        CancellationToken cancellationToken)
+    {
         try
         {
             using var timeout = CreateOperationTimeout(cancellationToken);

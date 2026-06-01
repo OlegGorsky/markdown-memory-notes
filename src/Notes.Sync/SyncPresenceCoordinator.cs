@@ -15,6 +15,7 @@ public sealed class SyncPresenceCoordinator<TConnection> : IDisposable
     private readonly TimeSpan sendTimeout;
     private readonly SyncMetrics metrics;
     private readonly ILogger logger;
+    private readonly int maxReconcileConcurrency;
 
     public SyncPresenceCoordinator(
         SyncRoomRegistry<TConnection> rooms,
@@ -23,7 +24,8 @@ public sealed class SyncPresenceCoordinator<TConnection> : IDisposable
         ISyncPresenceTracker presenceTracker,
         TimeSpan sendTimeout,
         SyncMetrics metrics,
-        ILogger logger)
+        ILogger logger,
+        int maxReconcileConcurrency = 4)
     {
         ArgumentNullException.ThrowIfNull(rooms);
         ArgumentNullException.ThrowIfNull(broadcaster);
@@ -32,6 +34,7 @@ public sealed class SyncPresenceCoordinator<TConnection> : IDisposable
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(sendTimeout, TimeSpan.Zero);
         ArgumentNullException.ThrowIfNull(metrics);
         ArgumentNullException.ThrowIfNull(logger);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxReconcileConcurrency);
 
         this.rooms = rooms;
         this.broadcaster = broadcaster;
@@ -40,6 +43,7 @@ public sealed class SyncPresenceCoordinator<TConnection> : IDisposable
         this.sendTimeout = sendTimeout;
         this.metrics = metrics;
         this.logger = logger;
+        this.maxReconcileConcurrency = maxReconcileConcurrency;
     }
 
     public bool IsDistributed => presenceTracker.IsDistributed;
@@ -60,6 +64,37 @@ public sealed class SyncPresenceCoordinator<TConnection> : IDisposable
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(room);
         return BroadcastPresenceAsync(room, cancellationToken);
+    }
+
+    public async Task ReconcileActivePresenceAsync(CancellationToken cancellationToken)
+    {
+        if (!presenceTracker.IsDistributed)
+        {
+            return;
+        }
+
+        foreach (var room in rooms.GetRooms())
+        {
+            var peers = rooms.GetPeers(room);
+            if (peers.Count == 0)
+            {
+                continue;
+            }
+
+            await Parallel.ForEachAsync(
+                peers,
+                new ParallelOptions
+                {
+                    CancellationToken = cancellationToken,
+                    MaxDegreeOfParallelism = maxReconcileConcurrency
+                },
+                async (peer, token) => await ReconcilePresenceAsync(room, peer.Key, token));
+
+            if (rooms.GetPeers(room).Count > 0)
+            {
+                await BroadcastPresenceAsync(room, cancellationToken);
+            }
+        }
     }
 
     public void Dispose()
@@ -83,6 +118,23 @@ public sealed class SyncPresenceCoordinator<TConnection> : IDisposable
         }
 
         await BroadcastPresenceAsync(room, cancellationToken);
+    }
+
+    private async ValueTask ReconcilePresenceAsync(
+        string room,
+        Guid connectionId,
+        CancellationToken cancellationToken)
+    {
+        if (!rooms.Contains(room, connectionId))
+        {
+            return;
+        }
+
+        await TrackJoinSafeAsync(room, connectionId, cancellationToken);
+        if (!rooms.Contains(room, connectionId))
+        {
+            await TrackLeaveSafeAsync(room, connectionId, cancellationToken);
+        }
     }
 
     private async Task BroadcastPresenceAsync(string room, CancellationToken cancellationToken)

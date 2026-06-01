@@ -29,7 +29,8 @@ var admissionCoordinator = new SyncAdmissionCoordinator<WebSocket>(
     options.MaxPeersPerRoom,
     options.SendTimeout,
     metrics,
-    app.Logger);
+    app.Logger,
+    options.MaxFanoutConcurrency);
 var backplaneBridge = new SyncBackplaneBridge<WebSocket>(
     options.InstanceId,
     rooms,
@@ -39,10 +40,6 @@ var backplaneBridge = new SyncBackplaneBridge<WebSocket>(
     options.SendTimeout,
     metrics,
     app.Logger);
-if (backplane is ISyncBackplaneRecoveryNotifier recoveryNotifier)
-{
-    recoveryNotifier.SetRecoveredHandler(backplaneBridge.EnsureActiveSubscriptionsAsync);
-}
 
 using var presenceCoordinator = new SyncPresenceCoordinator<WebSocket>(
     rooms,
@@ -51,7 +48,18 @@ using var presenceCoordinator = new SyncPresenceCoordinator<WebSocket>(
     backplane as ISyncPresenceTracker ?? NoopSyncPresenceTracker.Instance,
     options.SendTimeout,
     metrics,
-    app.Logger);
+    app.Logger,
+    options.MaxFanoutConcurrency);
+if (backplane is ISyncBackplaneRecoveryNotifier recoveryNotifier)
+{
+    recoveryNotifier.SetRecoveredHandler(async cancellationToken =>
+    {
+        await backplaneBridge.EnsureActiveSubscriptionsAsync(cancellationToken);
+        await admissionCoordinator.ReconcileActiveAdmissionsAsync(cancellationToken);
+        await presenceCoordinator.ReconcileActivePresenceAsync(cancellationToken);
+    });
+}
+
 broadcaster.SetPeerRemovedHandler(CleanupRemovedPeerAsync);
 
 if (SyncForwardedHeadersPolicy.IsConfigured(options))

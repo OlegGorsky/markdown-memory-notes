@@ -119,6 +119,29 @@ public sealed class SyncAdmissionCoordinatorTests
         Assert.Equal(1, metrics.Snapshot().AdmissionControllerFailed);
     }
 
+    [Fact]
+    public async Task ReconcileActiveAdmissionsAsyncRegistersFallbackPeerAfterControllerRecovers()
+    {
+        var registry = new SyncRoomRegistry<string>(MaxRooms, MaxPeersPerRoom);
+        var admission = new RecoveringAdmissionController();
+        var metrics = new SyncMetrics();
+        var coordinator = CreateCoordinator(registry, admission, metrics);
+        var connectionId = Guid.NewGuid();
+
+        admission.FailJoins = true;
+        Assert.Equal(
+            SyncJoinResult.Joined,
+            await coordinator.TryJoinAsync(Room, connectionId, "peer-a", CancellationToken.None));
+        admission.FailJoins = false;
+
+        await coordinator.ReconcileActiveAdmissionsAsync(CancellationToken.None);
+        await coordinator.PeerLeftAsync(Room, connectionId, CancellationToken.None);
+
+        Assert.Equal(2, admission.JoinAttempts);
+        Assert.Equal((Room, connectionId), admission.Left);
+        Assert.Equal(new SyncRoomStats(Rooms: 0, Connections: 0), registry.Stats);
+    }
+
     private static SyncAdmissionCoordinator<string> CreateCoordinator(
         SyncRoomRegistry<string> registry,
         ISyncAdmissionController admission,
@@ -226,6 +249,36 @@ public sealed class SyncAdmissionCoordinatorTests
         {
             LeaveAttempts++;
             throw new InvalidOperationException("Admission unavailable.");
+        }
+    }
+
+    private sealed class RecoveringAdmissionController : ISyncAdmissionController
+    {
+        public bool FailJoins { get; set; }
+        public bool IsDistributed => true;
+        public int JoinAttempts { get; private set; }
+        public (string Room, Guid ConnectionId)? Left { get; private set; }
+
+        public Task<SyncJoinResult> TryJoinAsync(
+            string room,
+            Guid connectionId,
+            int maxRooms,
+            int maxPeersPerRoom,
+            CancellationToken cancellationToken)
+        {
+            JoinAttempts++;
+            if (FailJoins)
+            {
+                throw new InvalidOperationException("Admission unavailable.");
+            }
+
+            return Task.FromResult(SyncJoinResult.Joined);
+        }
+
+        public Task PeerLeftAsync(string room, Guid connectionId, CancellationToken cancellationToken)
+        {
+            Left = (room, connectionId);
+            return Task.CompletedTask;
         }
     }
 }

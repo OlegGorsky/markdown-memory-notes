@@ -139,6 +139,30 @@ public sealed class SyncPresenceCoordinatorTests
         AssertPresenceCount(Assert.Single(backplane.Published).Message.Payload, 1);
     }
 
+    [Fact]
+    public async Task ReconcileActivePresenceAsyncTracksExistingPeersAndBroadcastsEachRoomOnce()
+    {
+        var registry = new SyncRoomRegistry<TestPeer>(maxRooms: 1, maxPeersPerRoom: 4);
+        var firstPeer = new TestPeer();
+        var secondPeer = new TestPeer();
+        var firstConnectionId = Guid.NewGuid();
+        var secondConnectionId = Guid.NewGuid();
+        registry.TryJoin(Room, firstConnectionId, firstPeer);
+        registry.TryJoin(Room, secondConnectionId, secondPeer);
+        await using var backplane = new RecordingBackplane();
+        var tracker = new FakePresenceTracker { PeerCount = 2 };
+        using var coordinator = CreateCoordinator(registry, backplane, tracker);
+
+        await coordinator.ReconcileActivePresenceAsync(CancellationToken.None);
+
+        Assert.Equal(2, tracker.JoinedPeers.Length);
+        Assert.Contains((Room, firstConnectionId), tracker.JoinedPeers);
+        Assert.Contains((Room, secondConnectionId), tracker.JoinedPeers);
+        AssertPresenceCount(Assert.Single(firstPeer.Messages), 2);
+        AssertPresenceCount(Assert.Single(secondPeer.Messages), 2);
+        AssertPresenceCount(Assert.Single(backplane.Published).Message.Payload, 2);
+    }
+
     private static SyncPresenceCoordinator<TestPeer> CreateCoordinator(
         SyncRoomRegistry<TestPeer> registry,
         ISyncBackplane backplane,
@@ -196,8 +220,22 @@ public sealed class SyncPresenceCoordinatorTests
 
     private sealed class FakePresenceTracker : ISyncPresenceTracker
     {
+        private readonly Lock joinedGate = new();
+        private readonly List<(string Room, Guid ConnectionId)> joinedPeers = new();
+
         public int? PeerCount { get; init; }
         public (string Room, Guid ConnectionId)? Joined { get; private set; }
+        public (string Room, Guid ConnectionId)[] JoinedPeers
+        {
+            get
+            {
+                lock (joinedGate)
+                {
+                    return joinedPeers.ToArray();
+                }
+            }
+        }
+
         public (string Room, Guid ConnectionId)? Left { get; private set; }
 
         public bool IsDistributed => true;
@@ -205,6 +243,11 @@ public sealed class SyncPresenceCoordinatorTests
         public Task PeerJoinedAsync(string room, Guid connectionId, CancellationToken cancellationToken)
         {
             Joined = (room, connectionId);
+            lock (joinedGate)
+            {
+                joinedPeers.Add((room, connectionId));
+            }
+
             return Task.CompletedTask;
         }
 
