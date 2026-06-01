@@ -6,8 +6,7 @@ public sealed class SyncRateLimit
     private readonly TimeSpan window;
     private readonly Func<DateTimeOffset> now;
     private readonly Lock gate = new();
-    private DateTimeOffset windowStart;
-    private int count;
+    private readonly Queue<DateTimeOffset> acceptedAt = new();
 
     public SyncRateLimit(int limit, TimeSpan window, Func<DateTimeOffset>? now = null)
     {
@@ -17,7 +16,6 @@ public sealed class SyncRateLimit
         this.limit = limit;
         this.window = window;
         this.now = now ?? (() => DateTimeOffset.UtcNow);
-        windowStart = this.now();
     }
 
     public bool TryConsume()
@@ -25,18 +23,17 @@ public sealed class SyncRateLimit
         lock (gate)
         {
             var current = now();
-            if (current - windowStart >= window)
+            while (acceptedAt.Count > 0 && current - acceptedAt.Peek() >= window)
             {
-                windowStart = current;
-                count = 0;
+                acceptedAt.Dequeue();
             }
 
-            if (count >= limit)
+            if (acceptedAt.Count >= limit)
             {
                 return false;
             }
 
-            count++;
+            acceptedAt.Enqueue(current);
             return true;
         }
     }

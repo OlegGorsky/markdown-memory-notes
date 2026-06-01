@@ -27,4 +27,19 @@ public sealed class SyncRateLimitTests
 
         Assert.True(limiter.TryConsume());
     }
+
+    [Fact]
+    public void TryConsumeRejectsBurstAcrossFixedWindowBoundary()
+    {
+        var start = new DateTimeOffset(2026, 5, 31, 12, 0, 0, TimeSpan.Zero);
+        var now = start;
+        var limiter = new SyncRateLimit(2, TimeSpan.FromMinutes(1), () => now);
+        now = start.AddSeconds(59);
+        Assert.True(limiter.TryConsume());
+        Assert.True(limiter.TryConsume());
+
+        now = start.AddMinutes(1);
+
+        Assert.False(limiter.TryConsume());
+    }
 }
