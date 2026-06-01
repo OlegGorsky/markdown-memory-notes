@@ -60,4 +60,7 @@ public static partial class SyncLog
 
     [LoggerMessage(EventId = 19, Level = LogLevel.Debug, Message = "Sync backplane receive queue is full. Room={Room}")]
     public static partial void BackplaneReceiveQueueFull(ILogger logger, string room);
+
+    [LoggerMessage(EventId = 20, Level = LogLevel.Warning, Message = "Sync backplane connect failed")]
+    public static partial void BackplaneConnectFailed(ILogger logger, Exception exception);
 }
