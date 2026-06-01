@@ -212,6 +212,7 @@ public sealed class SyncClient : IAsyncDisposable
             if (peerCount <= 1)
             {
                 ClearInFlight();
+                MarkRepairPending();
             }
 
             StateChanged?.Invoke(this, EventArgs.Empty);

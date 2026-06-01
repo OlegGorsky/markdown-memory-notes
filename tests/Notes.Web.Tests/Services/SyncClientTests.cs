@@ -518,6 +518,41 @@ public sealed class SyncClientTests
     }
 
     [Fact]
+    public async Task RepairRequestRunsAgainWhenPeerDisappearsAfterRepairSend()
+    {
+        var js = new CapturingJsRuntime();
+        await using var client = new SyncClient(js);
+        var repairRequests = 0;
+        var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var manifest = new SyncRepairManifest(
+            [new SyncManifestEntry("notes/project.md", SyncContentHash.Compute("# Project"))],
+            Truncated: false);
+        client.RepairRequested = async () =>
+        {
+            var request = Interlocked.Increment(ref repairRequests);
+            if (request == 2)
+            {
+                secondStarted.SetResult();
+            }
+
+            await client.SendRepairRequestAsync(manifest);
+        };
+
+        await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "AbCdEfGhIjKlMnOpQrStUv", (_, _) => Task.CompletedTask);
+        await client.OnStatus("connected");
+        await client.OnMessage("""{"type":"presence","peerCount":2}""");
+        Assert.Equal(1, repairRequests);
+        Assert.Single(js.Module.SentMessages);
+
+        await client.OnMessage("""{"type":"presence","peerCount":1}""");
+        await client.OnMessage("""{"type":"presence","peerCount":2}""");
+
+        await secondStarted.Task.WaitAsync(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+        Assert.Equal(2, repairRequests);
+        Assert.Equal(2, js.Module.SentMessages.Count);
+    }
+
+    [Fact]
     public async Task SendFileAsyncQueuesLatestChangeAndFlushesWhenPeerAppears()
     {
         var js = new CapturingJsRuntime();
