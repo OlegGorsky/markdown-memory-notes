@@ -54,6 +54,62 @@ public sealed class NotesSyncFeedbackTests
     }
 
     [Fact]
+    public async Task GenerateSyncCodeForModalConnectsActiveVault()
+    {
+        var js = new CapturingSyncSetupJsRuntime();
+        using var page = new NotesPage();
+        await using var sync = new SyncClient(js);
+        await using var vaultManager = new VaultManager(js);
+        SetProperty(page, "Sync", sync);
+        SetProperty(page, "VaultMgr", vaultManager);
+        SetField(page, "_vaults", new List<VaultEntry>
+        {
+            new("vault_1", "Vault", "/vault", null)
+        });
+        SetField(page, "_activeVaultId", "vault_1");
+        SetField(page, "_syncModalVault", "vault_1");
+
+        await InvokeGenerateSyncCodeForModalAsync(page, ignoreUnrenderedStateChange: true);
+
+        var saved = Assert.Single(js.Module.SavedVaults);
+        Assert.NotNull(saved.SyncCode);
+        Assert.Equal(saved.SyncCode, Assert.Single(js.Module.ConnectRooms));
+        Assert.Equal(saved.SyncCode, sync.Room);
+    }
+
+    [Fact]
+    public async Task ConnectVaultSyncIfActiveDisconnectsWhenActiveVaultHasNoSyncCode()
+    {
+        var js = new CapturingSyncSetupJsRuntime();
+        using var page = new NotesPage();
+        await using var sync = new SyncClient(js);
+        await sync.ConnectAsync(
+            new Uri("ws://localhost:5199/sync"),
+            "AbCdEfGhIjKlMnOpQrStUv",
+            (_, _, _) => Task.CompletedTask);
+        SetProperty(page, "Sync", sync);
+        SetField(page, "_activeVaultId", "vault_2");
+
+        await InvokeConnectVaultSyncIfActiveAsync(page, new VaultEntry("vault_2", "Other", "/other", null));
+
+        Assert.Equal(1, js.Module.DisconnectCalls);
+    }
+
+    [Fact]
+    public async Task ReconnectSyncAsyncDoesNotConnectInactiveVault()
+    {
+        var js = new CapturingSyncSetupJsRuntime();
+        using var page = new NotesPage();
+        await using var sync = new SyncClient(js);
+        SetProperty(page, "Sync", sync);
+        SetField(page, "_activeVaultId", "vault_1");
+
+        await InvokeReconnectSyncAsync(page, new VaultEntry("vault_2", "Other", "/other", "AbCdEfGhIjKlMnOpQrStUv"));
+
+        Assert.Empty(js.Module.ConnectRooms);
+    }
+
+    [Fact]
     public async Task RemoveLoadedNoteClearsStaleQuietMemory()
     {
         using var page = new NotesPage();
@@ -128,6 +184,46 @@ public sealed class NotesSyncFeedbackTests
         method.Invoke(page, []);
     }
 
+    private static async Task InvokeGenerateSyncCodeForModalAsync(
+        NotesPage page,
+        bool ignoreUnrenderedStateChange = false)
+    {
+        var method = typeof(NotesPage).GetMethod("GenerateSyncCodeForModalAsync", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("GenerateSyncCodeForModalAsync method was not found.");
+
+        var task = (Task)(method.Invoke(page, [])
+            ?? throw new InvalidOperationException("GenerateSyncCodeForModalAsync returned null."));
+        try
+        {
+            await task;
+        }
+        catch (InvalidOperationException exception) when (
+            ignoreUnrenderedStateChange &&
+            exception.Message.Contains("render handle", StringComparison.OrdinalIgnoreCase))
+        {
+        }
+    }
+
+    private static async Task InvokeConnectVaultSyncIfActiveAsync(NotesPage page, VaultEntry vault)
+    {
+        var method = typeof(NotesPage).GetMethod("ConnectVaultSyncIfActiveAsync", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("ConnectVaultSyncIfActiveAsync method was not found.");
+
+        var task = (Task)(method.Invoke(page, [vault])
+            ?? throw new InvalidOperationException("ConnectVaultSyncIfActiveAsync returned null."));
+        await task;
+    }
+
+    private static async Task InvokeReconnectSyncAsync(NotesPage page, VaultEntry vault)
+    {
+        var method = typeof(NotesPage).GetMethod("ReconnectSyncAsync", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("ReconnectSyncAsync method was not found.");
+
+        var task = (Task)(method.Invoke(page, [vault])
+            ?? throw new InvalidOperationException("ReconnectSyncAsync returned null."));
+        await task;
+    }
+
     private static void SetSession(NotesPage page, WebVaultSession session)
     {
         var property = typeof(NotesPage).GetProperty("Session", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
@@ -171,6 +267,86 @@ public sealed class NotesSyncFeedbackTests
         public ValueTask<TValue> InvokeAsync<TValue>(string identifier, CancellationToken cancellationToken, object?[]? args)
         {
             throw new NotSupportedException("JS interop is not used by this test.");
+        }
+    }
+
+    private sealed class CapturingSyncSetupJsRuntime : IJSRuntime
+    {
+        public CapturingSyncSetupJsObjectReference Module { get; } = new();
+
+        public ValueTask<TValue> InvokeAsync<TValue>(string identifier, object?[]? args)
+        {
+            if (identifier == "import")
+            {
+                return new ValueTask<TValue>((TValue)(object)Module);
+            }
+
+            throw new NotSupportedException(identifier);
+        }
+
+        public ValueTask<TValue> InvokeAsync<TValue>(
+            string identifier,
+            CancellationToken cancellationToken,
+            object?[]? args)
+        {
+            return InvokeAsync<TValue>(identifier, args);
+        }
+    }
+
+    private sealed class CapturingSyncSetupJsObjectReference : IJSObjectReference
+    {
+        public List<VaultEntry> SavedVaults { get; } = new();
+        public List<string> ConnectRooms { get; } = new();
+        public int DisconnectCalls { get; private set; }
+
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask<TValue> InvokeAsync<TValue>(string identifier, object?[]? args)
+        {
+            return identifier switch
+            {
+                "saveVault" => SaveVault<TValue>(args),
+                "getDefaultSyncUrl" => Result<TValue>("ws://localhost:5199/sync"),
+                "connect" => Connect<TValue>(args),
+                "disconnect" => Disconnect<TValue>(),
+                _ => throw new NotSupportedException(identifier)
+            };
+        }
+
+        public ValueTask<TValue> InvokeAsync<TValue>(
+            string identifier,
+            CancellationToken cancellationToken,
+            object?[]? args)
+        {
+            return InvokeAsync<TValue>(identifier, args);
+        }
+
+        private ValueTask<TValue> SaveVault<TValue>(object?[]? args)
+        {
+            SavedVaults.Add((VaultEntry)(args?[0]
+                ?? throw new ArgumentException("Missing vault.", nameof(args))));
+            return Result<TValue>(default!);
+        }
+
+        private ValueTask<TValue> Connect<TValue>(object?[]? args)
+        {
+            ConnectRooms.Add((string)(args?[1]
+                ?? throw new ArgumentException("Missing sync room.", nameof(args))));
+            return Result<TValue>(default!);
+        }
+
+        private ValueTask<TValue> Disconnect<TValue>()
+        {
+            DisconnectCalls++;
+            return Result<TValue>(default!);
+        }
+
+        private static ValueTask<TValue> Result<TValue>(object? value)
+        {
+            return new ValueTask<TValue>((TValue)value!);
         }
     }
 }

@@ -58,13 +58,23 @@ public sealed class BrowserFileSystem : IFileSystem, IAsyncDisposable
 
     private string Rel(string path)
     {
-        if (vaultFullPath is null) return path;
-        var full = Path.GetFullPath(path);
-        if (full.StartsWith(vaultFullPath, StringComparison.Ordinal))
+        if (vaultFullPath is null) return path.Replace('\\', '/');
+        if (!Path.IsPathFullyQualified(path)) return path.Replace('\\', '/');
+
+        var full = Path.GetFullPath(path).Replace('\\', '/');
+        var vaultRoot = vaultFullPath.Replace('\\', '/').TrimEnd('/');
+        if (string.Equals(full, vaultRoot, StringComparison.Ordinal))
         {
-            var rel = full[vaultFullPath.Length..].TrimStart('/', '\\');
+            return "";
+        }
+
+        var vaultPrefix = vaultRoot + "/";
+        if (full.StartsWith(vaultPrefix, StringComparison.Ordinal))
+        {
+            var rel = full[vaultPrefix.Length..].TrimStart('/', '\\');
             return string.IsNullOrEmpty(rel) ? "" : rel;
         }
+
         return full;
     }
 

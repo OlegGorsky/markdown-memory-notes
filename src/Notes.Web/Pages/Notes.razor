@@ -261,6 +261,11 @@ else
                 FS.CurrentVaultName ?? Path.GetFileName(Session.CurrentVault.RootPath.TrimEnd('/', '\\')),
                 Session.CurrentVault.RootPath);
             await ReloadNotesAsync();
+            var activeVault = _vaults.FirstOrDefault(v => v.Id == _activeVaultId);
+            if (activeVault is not null)
+            {
+                await ConnectVaultSyncIfActiveAsync(activeVault);
+            }
         }
     }
 
@@ -300,6 +305,11 @@ else
             Session.CurrentVault!.RootPath);
         _vaults = await VaultMgr.ListAsync();
         await ReloadNotesAsync();
+        var activeVault = _vaults.FirstOrDefault(v => v.Id == _activeVaultId);
+        if (activeVault is not null)
+        {
+            await ConnectVaultSyncIfActiveAsync(activeVault);
+        }
         StateHasChanged();
     }
 
@@ -407,6 +417,7 @@ else
             _activeVaultId = vault.Id;
             _notice = null;
             await ReloadNotesAsync();
+            await ConnectVaultSyncIfActiveAsync(vault);
         }
         catch
         {
@@ -428,6 +439,11 @@ else
             _vaults = await VaultMgr.ListAsync();
             _notice = null;
             await ReloadNotesAsync();
+            var activeVault = _vaults.FirstOrDefault(v => v.Id == _activeVaultId);
+            if (activeVault is not null)
+            {
+                await ConnectVaultSyncIfActiveAsync(activeVault);
+            }
         }
         catch
         {
@@ -494,6 +510,7 @@ else
         var idx = _vaults.FindIndex(v => v.Id == vault.Id);
         _vaults[idx] = updated;
         await VaultMgr.SaveAsync(updated);
+        await ConnectVaultSyncIfActiveAsync(updated);
         StateHasChanged();
     }
 
@@ -506,14 +523,7 @@ else
             return;
         }
 
-        try
-        {
-            await ConnectSyncRoomAsync(vault.SyncCode);
-        }
-        catch
-        {
-            _notice = "Синхронизация недоступна.";
-        }
+        await ConnectVaultSyncIfActiveAsync(vault);
     }
 
     private async Task ConnectSyncAsync()
@@ -534,15 +544,7 @@ else
         await VaultMgr.SaveAsync(updated);
         _syncCodeInput = "";
         _syncModalVault = null;
-
-        try
-        {
-            await ConnectSyncRoomAsync(code);
-        }
-        catch
-        {
-            _notice = "Синхронизация недоступна.";
-        }
+        await ConnectVaultSyncIfActiveAsync(updated);
         StateHasChanged();
     }
 
@@ -682,6 +684,47 @@ else
                 await InvokeAsync(ReloadNotesAsync);
             },
             OnRepairRequestReceivedAsync);
+    }
+
+    private async Task ConnectVaultSyncIfActiveAsync(VaultEntry vault)
+    {
+        if (vault.Id != _activeVaultId)
+        {
+            return;
+        }
+
+        if (vault.SyncCode is null ||
+            !global::Notes.Core.Sync.SyncPairingCode.IsValid(vault.SyncCode))
+        {
+            await DisconnectSyncRoomAsync();
+            return;
+        }
+
+        try
+        {
+            await ConnectSyncRoomAsync(vault.SyncCode);
+        }
+        catch
+        {
+            _notice = "Синхронизация недоступна.";
+        }
+    }
+
+    private async Task DisconnectSyncRoomAsync()
+    {
+        if (Sync.Room is null && !Sync.IsConnected)
+        {
+            return;
+        }
+
+        try
+        {
+            await Sync.DisconnectAsync();
+        }
+        catch
+        {
+            _notice = "Синхронизация недоступна.";
+        }
     }
 
     private async Task OnSyncRepairRequestedAsync()
