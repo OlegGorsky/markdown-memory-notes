@@ -1,3 +1,5 @@
+using System.Net;
+
 namespace Notes.Sync;
 
 public sealed class SyncConnectionLimiter
@@ -74,7 +76,20 @@ public sealed class SyncConnectionLimiter
 
     private static string NormalizeKey(string key)
     {
-        return string.IsNullOrWhiteSpace(key) ? "unknown" : key.Trim();
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return "unknown";
+        }
+
+        var trimmed = key.Trim();
+        if (!IPAddress.TryParse(trimmed, out var address))
+        {
+            return trimmed;
+        }
+
+        return address.IsIPv4MappedToIPv6
+            ? address.MapToIPv4().ToString()
+            : address.ToString();
     }
 
     internal void ReleaseLease(string key)

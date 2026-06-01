@@ -32,6 +32,25 @@ public sealed class SyncConnectionLimiterTests
     }
 
     [Fact]
+    public void TryAcquireTreatsIpv4MappedIpv6AsSameClient()
+    {
+        var limiter = new SyncConnectionLimiter(maxConnections: 10, maxConnectionsPerKey: 1);
+
+        using var first = limiter.TryAcquire("192.0.2.1");
+        using var second = limiter.TryAcquire("::ffff:192.0.2.1");
+
+        Assert.True(first.Acquired);
+        Assert.False(second.Acquired);
+        Assert.Equal(1, limiter.ActiveConnections);
+
+        first.Dispose();
+        using var third = limiter.TryAcquire("::ffff:192.0.2.1");
+
+        Assert.True(third.Acquired);
+        Assert.Equal(1, limiter.ActiveConnections);
+    }
+
+    [Fact]
     public void DisposingLeaseReleasesConnectionSlot()
     {
         var limiter = new SyncConnectionLimiter(maxConnections: 1, maxConnectionsPerKey: 1);
