@@ -71,20 +71,22 @@ public sealed class SyncRoomRegistry<TConnection>
         return rooms.TryGetValue(room, out var peers) && peers.ContainsKey(connectionId);
     }
 
-    public void Leave(string room, Guid connectionId)
+    public bool Leave(string room, Guid connectionId)
     {
         lock (gate)
         {
             if (!rooms.TryGetValue(room, out var peers))
             {
-                return;
+                return false;
             }
 
-            peers.TryRemove(connectionId, out _);
+            var removed = peers.TryRemove(connectionId, out _);
             if (peers.IsEmpty)
             {
                 rooms.TryRemove(room, out _);
             }
+
+            return removed;
         }
     }
 

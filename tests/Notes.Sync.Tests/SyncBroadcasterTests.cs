@@ -130,6 +130,61 @@ public sealed class SyncBroadcasterTests
     }
 
     [Fact]
+    public async Task BroadcastAsyncRunsPeerRemovedHandlerOnlyOnceWhenPeerWasAlreadyRemoved()
+    {
+        var registry = new SyncRoomRegistry<TestPeer>(maxRooms: 1, maxPeersPerRoom: 4);
+        var senderId = Guid.NewGuid();
+        var failedPeerId = Guid.NewGuid();
+        registry.TryJoin(Room, senderId, new TestPeer());
+        registry.TryJoin(Room, failedPeerId, new TestPeer());
+        var cleanupCount = 0;
+        var openChecks = 0;
+        var sendAttempts = 0;
+        var metrics = new SyncMetrics();
+        var firstSendEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondOpenCheckEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirstSend = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var broadcaster = new SyncBroadcaster<TestPeer>(
+            registry,
+            peer =>
+            {
+                if (Interlocked.Increment(ref openChecks) == 2)
+                {
+                    secondOpenCheckEntered.SetResult();
+                }
+
+                return peer.IsOpen;
+            },
+            async (_, _, cancellationToken) =>
+            {
+                if (Interlocked.Increment(ref sendAttempts) == 1)
+                {
+                    firstSendEntered.SetResult();
+                    await releaseFirstSend.Task.WaitAsync(TimeSpan.FromSeconds(1), cancellationToken);
+                }
+
+                throw new InvalidOperationException("Socket is no longer writable.");
+            },
+            maxFanoutConcurrency: 4,
+            metrics);
+        broadcaster.SetPeerRemovedHandler((_, _, _) =>
+        {
+            Interlocked.Increment(ref cleanupCount);
+            return Task.CompletedTask;
+        });
+
+        var firstBroadcast = broadcaster.BroadcastAsync(Room, senderId, "payload", TimeSpan.FromSeconds(2), NullLogger.Instance);
+        await firstSendEntered.Task.WaitAsync(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+        var secondBroadcast = broadcaster.BroadcastAsync(Room, senderId, "payload", TimeSpan.FromSeconds(2), NullLogger.Instance);
+        await secondOpenCheckEntered.Task.WaitAsync(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+        releaseFirstSend.SetResult();
+        await Task.WhenAll(firstBroadcast, secondBroadcast);
+
+        Assert.Equal(1, cleanupCount);
+        Assert.Equal(1, metrics.Snapshot().PeersRemoved);
+    }
+
+    [Fact]
     public async Task BroadcastAsyncBoundsConcurrentSends()
     {
         var registry = new SyncRoomRegistry<TestPeer>(maxRooms: 1, maxPeersPerRoom: 8);

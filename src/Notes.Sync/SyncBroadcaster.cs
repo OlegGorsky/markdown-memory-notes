@@ -80,9 +80,12 @@ public sealed class SyncBroadcaster<TConnection>
             {
                 if (!isOpen(peer.Value))
                 {
-                    await RemovePeerAsync(room, peer.Key, logger, CancellationToken.None);
+                    if (await RemovePeerAsync(room, peer.Key, logger, CancellationToken.None))
+                    {
+                        metrics.PeerRemoved();
+                    }
+
                     metrics.DeliveryFailed();
-                    metrics.PeerRemoved();
                     Interlocked.Increment(ref failed);
                     return;
                 }
@@ -102,9 +105,12 @@ public sealed class SyncBroadcaster<TConnection>
                 catch (Exception exception) when (IsUnavailablePeerException(exception))
                 {
                     SyncLog.RemovingUnavailablePeer(logger, exception, room);
-                    await RemovePeerAsync(room, peer.Key, logger, CancellationToken.None);
+                    if (await RemovePeerAsync(room, peer.Key, logger, CancellationToken.None))
+                    {
+                        metrics.PeerRemoved();
+                    }
+
                     metrics.DeliveryFailed();
-                    metrics.PeerRemoved();
                     Interlocked.Increment(ref failed);
                 }
                 finally
@@ -137,13 +143,17 @@ public sealed class SyncBroadcaster<TConnection>
             ObjectDisposedException;
     }
 
-    private async Task RemovePeerAsync(
+    private async Task<bool> RemovePeerAsync(
         string room,
         Guid connectionId,
         ILogger logger,
         CancellationToken cancellationToken)
     {
-        rooms.Leave(room, connectionId);
+        if (!rooms.Leave(room, connectionId))
+        {
+            return false;
+        }
+
         ForgetPeer(connectionId);
         if (peerRemovedHandler is not null)
         {
@@ -158,6 +168,8 @@ public sealed class SyncBroadcaster<TConnection>
                 SyncLog.PeerCleanupFailed(logger, exception, room);
             }
         }
+
+        return true;
     }
 
     private void TryRemoveForgottenGate(Guid connectionId, SendGate sendGate)
