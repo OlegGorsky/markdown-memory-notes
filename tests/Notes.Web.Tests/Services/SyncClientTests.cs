@@ -364,6 +364,34 @@ public sealed class SyncClientTests
     }
 
     [Fact]
+    public async Task PeerAppearanceRetriesRepairRequestWhenHandlerFails()
+    {
+        var js = new CapturingJsRuntime();
+        await using var client = new SyncClient(js);
+        var repairRequests = 0;
+        client.RepairRequested = () =>
+        {
+            repairRequests++;
+            if (repairRequests == 1)
+            {
+                throw new InvalidOperationException("repair scan failed");
+            }
+
+            return Task.CompletedTask;
+        };
+
+        await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "AbCdEfGhIjKlMnOpQrStUv", (_, _) => Task.CompletedTask);
+        await client.OnStatus("connected");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            client.OnMessage("""{"type":"presence","peerCount":2}"""));
+
+        await client.OnMessage("""{"type":"presence","peerCount":2}""");
+
+        Assert.Equal(2, repairRequests);
+    }
+
+    [Fact]
     public async Task SendFileAsyncQueuesLatestChangeAndFlushesWhenPeerAppears()
     {
         var js = new CapturingJsRuntime();

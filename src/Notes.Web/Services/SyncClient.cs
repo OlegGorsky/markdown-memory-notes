@@ -440,7 +440,6 @@ public sealed class SyncClient : IAsyncDisposable
             return;
         }
 
-        repairRequestPending = false;
         var handler = RepairRequested;
         if (handler is null)
         {
@@ -448,6 +447,7 @@ public sealed class SyncClient : IAsyncDisposable
         }
 
         await handler();
+        repairRequestPending = false;
     }
 
     private async Task SendOrQueueAsync(SyncMessage message)
