@@ -13,7 +13,9 @@ COPY src/Notes.Web/ src/Notes.Web/
 RUN dotnet publish src/Notes.Web/Notes.Web.csproj \
 	-c Release \
 	-o /app/publish \
-	--no-restore
+	--no-restore \
+	&& sed -i 's|<base href="/markdown-memory-notes/" />|<base href="/" />|' /app/publish/wwwroot/index.html \
+	&& sed -i 's|const base = "/markdown-memory-notes/";|const base = "/";|' /app/publish/wwwroot/service-worker.js
 
 FROM caddy:2-alpine
 
