@@ -719,8 +719,8 @@ else
                 MaxRepairResponseFiles);
             foreach (var change in changes)
             {
-                await TrySendSyncChangeAsync(() =>
-                    Sync.SendFileAsync(change.Path, change.Content, change.BaseHash));
+                await TrySendSyncChangeAsync(async () =>
+                    await Sync.TrySendRepairFileAsync(change.Path, change.Content, change.BaseHash));
             }
         }
         catch

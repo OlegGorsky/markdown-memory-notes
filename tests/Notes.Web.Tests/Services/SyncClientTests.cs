@@ -256,6 +256,60 @@ public sealed class SyncClientTests
     }
 
     [Fact]
+    public async Task TrySendRepairFileAsyncDoesNotEvictQueuedUserChangesWhenQueueIsFull()
+    {
+        var js = new CapturingJsRuntime();
+        await using var client = new SyncClient(js, maxQueuedOperations: 1);
+        await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "AbCdEfGhIjKlMnOpQrStUv", (_, _) => Task.CompletedTask);
+        await client.SendFileAsync("notes/user.md", "# User");
+
+        var queued = await client.TrySendRepairFileAsync("notes/repair.md", "# Repair", baseHash: null);
+
+        Assert.False(queued);
+        await client.OnStatus("connected");
+        await client.OnMessage("""{"type":"presence","peerCount":2}""");
+        var message = Assert.Single(js.Module.SentMessages);
+        Assert.Contains("\"path\":\"notes/user.md\"", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("notes/repair.md", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TrySendRepairFileAsyncDoesNotReplaceQueuedUserChangeForSamePath()
+    {
+        var js = new CapturingJsRuntime();
+        await using var client = new SyncClient(js, maxQueuedOperations: 2);
+        await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "AbCdEfGhIjKlMnOpQrStUv", (_, _) => Task.CompletedTask);
+        await client.SendFileAsync("notes/project.md", "# User");
+
+        var queued = await client.TrySendRepairFileAsync("notes/project.md", "# Repair", baseHash: null);
+
+        Assert.False(queued);
+        await client.OnStatus("connected");
+        await client.OnMessage("""{"type":"presence","peerCount":2}""");
+        var message = Assert.Single(js.Module.SentMessages);
+        Assert.Contains("\"content\":\"# User\"", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("# Repair", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TrySendRepairFileAsyncQueuesWhenCapacityIsAvailable()
+    {
+        var js = new CapturingJsRuntime();
+        await using var client = new SyncClient(js, maxQueuedOperations: 2);
+        await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "AbCdEfGhIjKlMnOpQrStUv", (_, _) => Task.CompletedTask);
+        await client.SendFileAsync("notes/user.md", "# User");
+
+        var queued = await client.TrySendRepairFileAsync("notes/repair.md", "# Repair", baseHash: null);
+
+        Assert.True(queued);
+        await client.OnStatus("connected");
+        await client.OnMessage("""{"type":"presence","peerCount":2}""");
+        Assert.Equal(2, js.Module.SentMessages.Count);
+        Assert.Contains(js.Module.SentMessages, message => message.Contains("\"path\":\"notes/user.md\"", StringComparison.Ordinal));
+        Assert.Contains(js.Module.SentMessages, message => message.Contains("\"path\":\"notes/repair.md\"", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task OnMessageInvokesRepairRequestHandler()
     {
         await using var client = new SyncClient(new CapturingJsRuntime());

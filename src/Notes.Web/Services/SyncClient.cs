@@ -132,6 +132,23 @@ public sealed class SyncClient : IAsyncDisposable
         await SendOrQueueAsync(new SyncMessage("file", normalizedPath, content, baseHash, SyncMessageId.New()));
     }
 
+    public async Task<bool> TrySendRepairFileAsync(string relativePath, string content, string? baseHash)
+    {
+        if (!VaultRelativePath.TryNormalizeMarkdownContentPath(relativePath, out var normalizedPath))
+        {
+            throw new ArgumentException("Sync path is outside supported Markdown content.", nameof(relativePath));
+        }
+
+        ValidateBaseHash(baseHash);
+        var queued = TryQueuePendingRepair(new SyncMessage("file", normalizedPath, content, baseHash, SyncMessageId.New()));
+        if (queued && CanSendNow)
+        {
+            await FlushPendingAsync();
+        }
+
+        return queued;
+    }
+
     public async Task SendDeleteAsync(string relativePath)
     {
         await SendDeleteAsync(relativePath, baseHash: null);
@@ -568,6 +585,31 @@ public sealed class SyncClient : IAsyncDisposable
             }
 
             pendingByPath[message.Path] = message;
+        }
+    }
+
+    private bool TryQueuePendingRepair(SyncMessage message)
+    {
+        if (_room is null ||
+            message.Path is null ||
+            !SyncMessageId.IsValid(message.MessageId))
+        {
+            return false;
+        }
+
+        ValidateOutgoingMessageSize(message, "content");
+
+        lock (pendingGate)
+        {
+            if (pendingByPath.ContainsKey(message.Path) ||
+                pendingByPath.Count >= maxQueuedOperations)
+            {
+                return false;
+            }
+
+            pendingOrder.Enqueue(message.Path);
+            pendingByPath[message.Path] = message;
+            return true;
         }
     }
 
