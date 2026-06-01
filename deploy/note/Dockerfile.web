@@ -23,7 +23,10 @@ ENV XDG_CONFIG_HOME=/config \
 COPY deploy/note/Caddyfile.web /etc/caddy/Caddyfile
 COPY --from=build --chown=65534:65534 /app/publish/wwwroot/ /srv/www/
 
-RUN mkdir -p /data /config \
+RUN cp /usr/bin/caddy /tmp/caddy \
+	&& chmod 0755 /tmp/caddy \
+	&& mv /tmp/caddy /usr/bin/caddy \
+	&& mkdir -p /data /config \
 	&& chown -R 65534:65534 /data /config /srv/www
 
 USER 65534:65534
