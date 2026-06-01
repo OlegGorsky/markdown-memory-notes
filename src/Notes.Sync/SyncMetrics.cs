@@ -250,7 +250,8 @@ public sealed class SyncMetrics
         int activeWebSockets,
         int activeBackplaneSubscriptions = 0,
         int activeSendGates = 0,
-        int activeBackplaneReceiveGates = 0)
+        int activeBackplaneReceiveGates = 0,
+        int trackedConnectionAttemptClients = 0)
     {
         var snapshot = Snapshot();
         return string.Create(
@@ -262,6 +263,7 @@ public sealed class SyncMetrics
             mmn_sync_active_backplane_subscriptions {activeBackplaneSubscriptions}
             mmn_sync_active_send_gates {activeSendGates}
             mmn_sync_active_backplane_receive_gates {activeBackplaneReceiveGates}
+            mmn_sync_tracked_connection_attempt_clients {trackedConnectionAttemptClients}
             mmn_sync_messages_received_total {snapshot.MessagesReceived}
             mmn_sync_messages_rejected_total {snapshot.MessagesRejected}
             mmn_sync_messages_rate_limited_total {snapshot.MessagesRateLimited}

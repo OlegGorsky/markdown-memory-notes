@@ -13,7 +13,8 @@ var metrics = new SyncMetrics();
 var connections = new SyncConnectionLimiter(options.MaxConnections, options.MaxConnectionsPerClient);
 var connectionAttempts = new SyncConnectionAttemptLimiter(
     options.MaxConnectionAttemptsPerMinute,
-    TimeSpan.FromMinutes(1));
+    TimeSpan.FromMinutes(1),
+    maxTrackedClients: options.MaxConnections);
 var broadcaster = new SyncBroadcaster<WebSocket>(
     rooms,
     static socket => socket.State is WebSocketState.Open,
@@ -301,6 +302,7 @@ app.MapGet("/health", async (CancellationToken cancellationToken) =>
         rooms = stats.Rooms,
         connections = stats.Connections,
         activeWebSockets = connections.ActiveConnections,
+        trackedConnectionAttemptClients = connectionAttempts.TrackedClientCount,
         activeSendGates = broadcaster.SendGateCount,
         counters,
         options.MaxConnections,
@@ -336,7 +338,8 @@ app.MapGet("/metrics", () =>
             connections.ActiveConnections,
             backplaneBridge.SubscriptionCount,
             broadcaster.SendGateCount,
-            backplaneBridge.ReceiveGateCount),
+            backplaneBridge.ReceiveGateCount,
+            connectionAttempts.TrackedClientCount),
         "text/plain; version=0.0.4");
 });
 

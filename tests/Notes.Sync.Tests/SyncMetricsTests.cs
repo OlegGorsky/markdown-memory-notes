@@ -98,7 +98,8 @@ public sealed class SyncMetricsTests
             activeWebSockets: 11,
             activeBackplaneSubscriptions: 5,
             activeSendGates: 2,
-            activeBackplaneReceiveGates: 4);
+            activeBackplaneReceiveGates: 4,
+            trackedConnectionAttemptClients: 6);
 
         Assert.Contains("mmn_sync_rooms 3", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_connections 7", text, StringComparison.Ordinal);
@@ -106,6 +107,7 @@ public sealed class SyncMetricsTests
         Assert.Contains("mmn_sync_active_backplane_subscriptions 5", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_active_send_gates 2", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_active_backplane_receive_gates 4", text, StringComparison.Ordinal);
+        Assert.Contains("mmn_sync_tracked_connection_attempt_clients 6", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_messages_received_total 1", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_connection_limit_rejected_total 0", text, StringComparison.Ordinal);
         Assert.Contains("mmn_sync_connection_rate_limited_total 0", text, StringComparison.Ordinal);

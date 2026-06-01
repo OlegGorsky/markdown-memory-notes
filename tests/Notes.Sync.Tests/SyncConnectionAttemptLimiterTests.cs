@@ -51,4 +51,18 @@ public sealed class SyncConnectionAttemptLimiterTests
 
         Assert.Equal(1, limiter.TrackedClientCount);
     }
+
+    [Fact]
+    public void TryConsumeRejectsNewClientsWhenTrackedClientLimitIsReached()
+    {
+        var limiter = new SyncConnectionAttemptLimiter(
+            limit: 2,
+            window: TimeSpan.FromMinutes(1),
+            maxTrackedClients: 1);
+
+        Assert.True(limiter.TryConsume("client-a"));
+        Assert.True(limiter.TryConsume("client-a"));
+        Assert.False(limiter.TryConsume("client-b"));
+        Assert.Equal(1, limiter.TrackedClientCount);
+    }
 }

@@ -3,18 +3,25 @@ namespace Notes.Sync;
 public sealed class SyncConnectionAttemptLimiter
 {
     private readonly int limit;
+    private readonly int maxTrackedClients;
     private readonly TimeSpan window;
     private readonly Func<DateTimeOffset> now;
     private readonly Lock gate = new();
     private readonly Dictionary<string, Queue<DateTimeOffset>> attemptsByKey = new(StringComparer.Ordinal);
     private DateTimeOffset nextPruneAt;
 
-    public SyncConnectionAttemptLimiter(int limit, TimeSpan window, Func<DateTimeOffset>? now = null)
+    public SyncConnectionAttemptLimiter(
+        int limit,
+        TimeSpan window,
+        Func<DateTimeOffset>? now = null,
+        int maxTrackedClients = int.MaxValue)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(window, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxTrackedClients);
 
         this.limit = limit;
+        this.maxTrackedClients = maxTrackedClients;
         this.window = window;
         this.now = now ?? (() => DateTimeOffset.UtcNow);
         nextPruneAt = DateTimeOffset.MinValue;
@@ -45,6 +52,11 @@ public sealed class SyncConnectionAttemptLimiter
 
             if (!attemptsByKey.TryGetValue(normalizedKey, out var attempts))
             {
+                if (attemptsByKey.Count >= maxTrackedClients)
+                {
+                    return false;
+                }
+
                 attempts = new Queue<DateTimeOffset>();
                 attemptsByKey[normalizedKey] = attempts;
             }
