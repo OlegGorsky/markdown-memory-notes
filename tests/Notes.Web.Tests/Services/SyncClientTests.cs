@@ -165,6 +165,22 @@ public sealed class SyncClientTests
         Assert.Empty(received);
     }
 
+    [Fact]
+    public async Task OnMessageRejectsDeleteMessagesWithContentPayload()
+    {
+        await using var client = new SyncClient(new CapturingJsRuntime());
+        var received = new List<(string Path, string? Content, string? BaseHash)>();
+        await client.ConnectAsync(new Uri("ws://localhost:5199/sync"), "AbCdEfGhIjKlMnOpQrStUv", (path, content, baseHash) =>
+        {
+            received.Add((path, content, baseHash));
+            return Task.CompletedTask;
+        });
+
+        await client.OnMessage("""{"type":"delete","path":"notes/project.md","content":"unneeded payload"}""");
+
+        Assert.Empty(received);
+    }
+
     [Theory]
     [InlineData("""{"type":"file","Type":"delete","path":"notes/project.md","content":"# Project"}""")]
     [InlineData("""{"type":"file","path":"notes/project.md","Path":"notes/other.md","content":"# Project"}""")]

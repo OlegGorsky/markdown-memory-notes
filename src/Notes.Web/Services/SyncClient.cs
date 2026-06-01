@@ -194,6 +194,7 @@ public sealed class SyncClient : IAsyncDisposable
             }
             else if (msg?.Type == "delete" &&
                      msg.Path is not null &&
+                     msg.Content is null &&
                      VaultRelativePath.TryNormalizeMarkdownContentPath(msg.Path, out var deletePath))
             {
                 await InvokeFileReceivedAsync(deletePath, null, msg.BaseHash);
