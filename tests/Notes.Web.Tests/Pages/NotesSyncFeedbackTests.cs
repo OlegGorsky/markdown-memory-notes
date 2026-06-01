@@ -36,6 +36,24 @@ public sealed class NotesSyncFeedbackTests
     }
 
     [Fact]
+    public async Task UpdateSyncStatusNoticeShowsOverloadedStatusUntilConnected()
+    {
+        using var page = new NotesPage();
+        await using var sync = new SyncClient(new NoopJsRuntime());
+        SetProperty(page, "Sync", sync);
+
+        await sync.OnStatus("overloaded");
+        InvokeUpdateSyncStatusNotice(page);
+
+        Assert.Equal("Синхронизация перегружена. Переподключаемся.", GetNotice(page));
+
+        await sync.OnStatus("connected");
+        InvokeUpdateSyncStatusNotice(page);
+
+        Assert.Null(GetNotice(page));
+    }
+
+    [Fact]
     public async Task RemoveLoadedNoteClearsStaleQuietMemory()
     {
         using var page = new NotesPage();
@@ -102,6 +120,14 @@ public sealed class NotesSyncFeedbackTests
         method.Invoke(page, [noteId]);
     }
 
+    private static void InvokeUpdateSyncStatusNotice(NotesPage page)
+    {
+        var method = typeof(NotesPage).GetMethod("UpdateSyncStatusNotice", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("UpdateSyncStatusNotice method was not found.");
+
+        method.Invoke(page, []);
+    }
+
     private static void SetSession(NotesPage page, WebVaultSession session)
     {
         var property = typeof(NotesPage).GetProperty("Session", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
@@ -116,6 +142,14 @@ public sealed class NotesSyncFeedbackTests
             ?? throw new InvalidOperationException($"{name} field was not found.");
 
         field.SetValue(page, value);
+    }
+
+    private static void SetProperty<T>(NotesPage page, string name, T value)
+    {
+        var property = typeof(NotesPage).GetProperty(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException($"{name} property was not found.");
+
+        property.SetValue(page, value);
     }
 
     private static T GetField<T>(NotesPage page, string name)

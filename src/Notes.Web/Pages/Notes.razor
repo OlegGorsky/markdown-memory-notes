@@ -242,11 +242,13 @@ else
     private ElementReference _textareaRef;
     private IJSObjectReference? _editorModule;
     private const string SyncOversizedNotice = "Файл слишком большой для синхронизации.";
+    private const string SyncOverloadedNotice = "Синхронизация перегружена. Переподключаемся.";
     private const int InitialVisibleTreeChildren = 80;
     private const int TreeChildrenRevealStep = 80;
 
     protected override async Task OnInitializedAsync()
     {
+        Sync.StateChanged += OnSyncStateChanged;
         _editorModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/text-editor.js");
         _vaults = await VaultMgr.ListAsync();
         if (Session.IsOpen && Session.CurrentVault is not null)
@@ -256,6 +258,24 @@ else
                 FS.CurrentVaultName ?? Path.GetFileName(Session.CurrentVault.RootPath.TrimEnd('/', '\\')),
                 Session.CurrentVault.RootPath);
             await ReloadNotesAsync();
+        }
+    }
+
+    private void OnSyncStateChanged(object? sender, EventArgs e)
+    {
+        UpdateSyncStatusNotice();
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void UpdateSyncStatusNotice()
+    {
+        if (string.Equals(Sync.Status, "overloaded", StringComparison.Ordinal))
+        {
+            _notice = SyncOverloadedNotice;
+        }
+        else if (Sync.IsConnected && string.Equals(_notice, SyncOverloadedNotice, StringComparison.Ordinal))
+        {
+            _notice = null;
         }
     }
 
@@ -784,6 +804,11 @@ else
 
     public void Dispose()
     {
+        if (Sync is not null)
+        {
+            Sync.StateChanged -= OnSyncStateChanged;
+        }
+
         _autosaveCts?.Cancel();
         _autosaveCts?.Dispose();
     }
