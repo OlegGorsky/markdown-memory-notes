@@ -1,0 +1,24 @@
+{
+  "name": "GorseeNote",
+  "short_name": "GorseeNote",
+  "description": "Заметки, которые помнят ход мысли.",
+  "lang": "ru",
+  "id": "./",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#050508",
+  "theme_color": "#0A0A12",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    },
+    {
+      "src": "icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    }
+  ]
+}
