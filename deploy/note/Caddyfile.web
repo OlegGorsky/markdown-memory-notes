@@ -6,6 +6,8 @@
 :8080 {
 	root * /srv/www
 	encode zstd gzip
+	@serviceWorker path /service-worker.js /service-worker-assets.js
+	header @serviceWorker Cache-Control "no-store"
 	try_files {path} {path}/ /index.html
 	file_server
 }
